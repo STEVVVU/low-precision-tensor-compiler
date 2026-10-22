@@ -83,7 +83,7 @@ Reproduce after Doctor and Drive in an exclusive GPU slot:
 & $python tools/p21_summarize.py
 ```
 
-The maintained numerical diagnostic is `tools/p21_diagnose.py`.
+The maintained numerical diagnostic is `tools/p21_diagnose.py`. A subsequent [large-GEMM diagnosis](docs/evidence/P21/numerical-diagnosis.md) passed Doctor and strict Drive, then reproduced the large-case failure. TileLang had 33 of 524,288 finite outputs above two FP16 ULP (maximum 204); an ordinary FP32 dense control also failed, while the CUDA FP64 control stayed within one ULP. The worst dot product had severe cancellation. The original gate remains unchanged, and no larger-case equal-quality speedup is claimed.
 
 The compact [GPU evidence bundle](docs/evidence/P21/README.md) includes the actual SM120 Drive and Benchmark JSON plus generated CUDA and TIR from the measured run. The measured medium 128×256×256 output had maximum absolute error `0.0625`, maximum 2 FP16 ULP, and one of 32,768 outputs above 1 ULP versus CPU float64 rounded to FP16. A deterministic odd-K test poisoned the unused high nibble to `0xF` and produced exact cancellation, signed, and zero outputs.
 

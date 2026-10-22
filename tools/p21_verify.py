@@ -56,6 +56,14 @@ def _inputs(m: int, n: int, k: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
     return a, q
 
 
+def _fp16_ulp_distances(actual: np.ndarray, expected: np.ndarray) -> np.ndarray:
+    actual_bits = np.asarray(actual, dtype=np.float16).view(np.uint16)
+    expected_bits = np.asarray(expected, dtype=np.float16).view(np.uint16)
+    actual_ordered = np.where(actual_bits & 0x8000, np.bitwise_not(actual_bits), actual_bits | 0x8000).astype(np.int32)
+    expected_ordered = np.where(expected_bits & 0x8000, np.bitwise_not(expected_bits), expected_bits | 0x8000).astype(np.int32)
+    return np.abs(actual_ordered - expected_ordered)
+
+
 def _check_output(
     output: torch.Tensor,
     a_cpu: np.ndarray,
@@ -72,11 +80,7 @@ def _check_output(
     torch.testing.assert_close(output.float(), torch_ref, atol=ATOL, rtol=RTOL)
     actual = output.float().cpu().numpy()
     expected = cpu_ref16.astype(np.float32)
-    actual_bits = output.cpu().numpy().view(np.uint16)
-    expected_bits = cpu_ref16.view(np.uint16)
-    actual_ordered = np.where(actual_bits & 0x8000, np.bitwise_not(actual_bits), actual_bits | 0x8000).astype(np.int32)
-    expected_ordered = np.where(expected_bits & 0x8000, np.bitwise_not(expected_bits), expected_bits | 0x8000).astype(np.int32)
-    ulp_distances = np.abs(actual_ordered - expected_ordered)
+    ulp_distances = _fp16_ulp_distances(output.cpu().numpy(), cpu_ref16)
     max_ulp = int(ulp_distances.max())
     if max_ulp_limit is not None and max_ulp > max_ulp_limit:
         raise AssertionError(f"output differs from rounded CPU float64 by {max_ulp} FP16 ULPs")

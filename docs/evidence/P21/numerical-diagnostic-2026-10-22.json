@@ -1,0 +1,1201 @@
+{
+  "purpose": "diagnostic only; no runtime fallback or optimization",
+  "frozen_input_identity": {
+    "shape_mnk": [
+      256,
+      2048,
+      2048
+    ],
+    "seed": 21,
+    "generator": "numpy.random.default_rng(seed=21), standard_normal cast to float16 activations, integers(-8, 8) int8 weights",
+    "activation_dtype": "float16",
+    "weight_dtype": "int8",
+    "activation_sha256": "1424538ea749eeb2eabbf8c064e075caa614dfc00145ea555da1ea404932c5ea",
+    "weight_sha256": "0353e91feb240b27963dc271877f3e1db32a599c29668ef61dc06509a935bfd8",
+    "source_inputs_sha256": "973689a130aad7e471a51fc32c8a51c50f6a791984546da3fdc425ec56fa6b8b"
+  },
+  "reference": {
+    "method": "CPU NumPy float64 matmul on the frozen float16/int8 input values, then round to float16",
+    "cpu_float64_reference_sha256": "82795964b8d4d6f4a32e74c4d6eaadf6f8ee78c3a8d79be66d92bf44741ade03",
+    "cpu_float64_reference_rounded_fp16_sha256": "98a6e36206fd764b7e7ce75611386410d0811cc430f0078899e80aff2788013f"
+  },
+  "source_sha256": {
+    "tools\\p21_diagnose.py": "bd62b33efa556cf562718cced242fd869b53a9727b0e8a60970078d80305b0ba",
+    "tools\\p21_verify.py": "39802f69aa6ab2f154d71bb916f0c9b1a0daf97e300598376e56c124de5a31bd",
+    "examples\\dequantize_gemm\\p21_fp16xint4.py": "1091ce3a9d59755519d98d3893bfb316e11ab503eb6b9fc432c4311beb22bde6"
+  },
+  "model_sha256": null,
+  "runtime": {
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "numpy": "2.3.4",
+    "torch": "2.11.0+cu128",
+    "cuda_runtime": "12.8",
+    "cuda_driver": "592.01",
+    "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+    "target": "sm_120",
+    "device": "cuda:0",
+    "device_capability": [
+      12,
+      0
+    ],
+    "input_dtype": {
+      "activation": "float16",
+      "weights": "int8 signed values",
+      "output": "float16"
+    },
+    "torch_precision_flags_observed_without_changes": {
+      "float32_matmul_precision": "highest",
+      "allow_tf32": false,
+      "allow_fp16_reduced_precision_reduction": true,
+      "allow_bf16_reduced_precision_reduction": true
+    }
+  },
+  "results": {
+    "torch_unpack_plus_matmul": {
+      "max_abs": 0.5,
+      "violations_at_existing_tolerance": 0,
+      "finite_ordered_fp16_ulp": {
+        "max": 188,
+        "count_over_1": 27,
+        "count_over_2": 18,
+        "finite_comparisons": 524288,
+        "nonfinite_actual": 0,
+        "nonfinite_reference": 0
+      },
+      "passes_original_two_ulp_gate": false,
+      "worst_examples": [
+        {
+          "coordinate_m_n": [
+            104,
+            1678
+          ],
+          "actual_fp16": 0.000308990478515625,
+          "reference_fp16": 0.00035381317138671875,
+          "absolute_error": 4.482269287109375e-05,
+          "ulp_distance": 188,
+          "dot_condition_number": 18903768.08625337,
+          "sum_abs_products_float64": 6688.402137756348,
+          "numpy_fp32_sum": 0.00035858154296875,
+          "numpy_fp32_sum_rounded_fp16": 0.00035858154296875,
+          "math_fsum_products_float64": 0.00035381317138671875,
+          "math_fsum_rounded_fp16": 0.00035381317138671875
+        },
+        {
+          "coordinate_m_n": [
+            174,
+            386
+          ],
+          "actual_fp16": 0.0005645751953125,
+          "reference_fp16": 0.000553131103515625,
+          "absolute_error": 1.1444091796875e-05,
+          "ulp_distance": 24,
+          "dot_condition_number": 11563490.020364186,
+          "sum_abs_products_float64": 6396.815233170986,
+          "numpy_fp32_sum": 0.00055694580078125,
+          "numpy_fp32_sum_rounded_fp16": 0.00055694580078125,
+          "math_fsum_products_float64": 0.0005531907081604004,
+          "math_fsum_rounded_fp16": 0.000553131103515625
+        },
+        {
+          "coordinate_m_n": [
+            14,
+            585
+          ],
+          "actual_fp16": 0.0038299560546875,
+          "reference_fp16": 0.003871917724609375,
+          "absolute_error": 4.1961669921875e-05,
+          "ulp_distance": 22,
+          "dot_condition_number": 1676751.4956885932,
+          "sum_abs_products_float64": 6490.64476108551,
+          "numpy_fp32_sum": 0.003875732421875,
+          "numpy_fp32_sum_rounded_fp16": 0.003875732421875,
+          "math_fsum_products_float64": 0.0038709640502929688,
+          "math_fsum_rounded_fp16": 0.003871917724609375
+        },
+        {
+          "coordinate_m_n": [
+            9,
+            1063
+          ],
+          "actual_fp16": 0.00165557861328125,
+          "reference_fp16": 0.001636505126953125,
+          "absolute_error": 1.9073486328125e-05,
+          "ulp_distance": 20,
+          "dot_condition_number": 3873038.4868919314,
+          "sum_abs_products_float64": 6340.09414935112,
+          "numpy_fp32_sum": 0.0016326904296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0016326904296875,
+          "math_fsum_products_float64": 0.0016369819641113281,
+          "math_fsum_rounded_fp16": 0.001636505126953125
+        },
+        {
+          "coordinate_m_n": [
+            187,
+            864
+          ],
+          "actual_fp16": -0.00119781494140625,
+          "reference_fp16": -0.0012149810791015625,
+          "absolute_error": 1.71661376953125e-05,
+          "ulp_distance": 18,
+          "dot_condition_number": 5541370.932522558,
+          "sum_abs_products_float64": 6735.3031668663025,
+          "numpy_fp32_sum": -0.00121307373046875,
+          "numpy_fp32_sum_rounded_fp16": -0.00121307373046875,
+          "math_fsum_products_float64": -0.0012154579162597656,
+          "math_fsum_rounded_fp16": -0.0012149810791015625
+        },
+        {
+          "coordinate_m_n": [
+            238,
+            1755
+          ],
+          "actual_fp16": -0.0021514892578125,
+          "reference_fp16": -0.002166748046875,
+          "absolute_error": 1.52587890625e-05,
+          "ulp_distance": 8,
+          "dot_condition_number": 3090774.686365137,
+          "sum_abs_products_float64": 6696.193116903305,
+          "numpy_fp32_sum": -0.002170562744140625,
+          "numpy_fp32_sum_rounded_fp16": -0.002170562744140625,
+          "math_fsum_products_float64": -0.0021665096282958984,
+          "math_fsum_rounded_fp16": -0.002166748046875
+        },
+        {
+          "coordinate_m_n": [
+            238,
+            1461
+          ],
+          "actual_fp16": -0.00202178955078125,
+          "reference_fp16": -0.0020084381103515625,
+          "absolute_error": 1.33514404296875e-05,
+          "ulp_distance": 7,
+          "dot_condition_number": 3302132.847103514,
+          "sum_abs_products_float64": 6632.129455566406,
+          "numpy_fp32_sum": -0.0019989013671875,
+          "numpy_fp32_sum_rounded_fp16": -0.0019989013671875,
+          "math_fsum_products_float64": -0.0020084381103515625,
+          "math_fsum_rounded_fp16": -0.0020084381103515625
+        },
+        {
+          "coordinate_m_n": [
+            150,
+            151
+          ],
+          "actual_fp16": 0.001983642578125,
+          "reference_fp16": 0.001995086669921875,
+          "absolute_error": 1.1444091796875e-05,
+          "ulp_distance": 6,
+          "dot_condition_number": 3331227.118546845,
+          "sum_abs_products_float64": 6646.086818695068,
+          "numpy_fp32_sum": 0.00199127197265625,
+          "numpy_fp32_sum_rounded_fp16": 0.00199127197265625,
+          "math_fsum_products_float64": 0.001995086669921875,
+          "math_fsum_rounded_fp16": 0.001995086669921875
+        }
+      ]
+    },
+    "torch_predecoded_fp16": {
+      "max_abs": 0.5,
+      "violations_at_existing_tolerance": 1905,
+      "finite_ordered_fp16_ulp": {
+        "max": 19179,
+        "count_over_1": 44022,
+        "count_over_2": 25161,
+        "finite_comparisons": 524288,
+        "nonfinite_actual": 0,
+        "nonfinite_reference": 0
+      },
+      "passes_original_two_ulp_gate": false,
+      "worst_examples": [
+        {
+          "coordinate_m_n": [
+            119,
+            1680
+          ],
+          "actual_fp16": 0.01409912109375,
+          "reference_fp16": -0.030059814453125,
+          "absolute_error": 0.044158935546875,
+          "ulp_distance": 19179,
+          "dot_condition_number": 205366.4880342558,
+          "sum_abs_products_float64": 6174.747420787811,
+          "numpy_fp32_sum": -0.030076980590820312,
+          "numpy_fp32_sum_rounded_fp16": -0.0300750732421875,
+          "math_fsum_products_float64": -0.030066967010498047,
+          "math_fsum_rounded_fp16": -0.030059814453125
+        },
+        {
+          "coordinate_m_n": [
+            129,
+            1755
+          ],
+          "actual_fp16": -0.02716064453125,
+          "reference_fp16": 0.015411376953125,
+          "absolute_error": 0.042572021484375,
+          "ulp_distance": 19161,
+          "dot_condition_number": 421396.10449608567,
+          "sum_abs_products_float64": 6493.691401004791,
+          "numpy_fp32_sum": 0.015411376953125,
+          "numpy_fp32_sum_rounded_fp16": 0.015411376953125,
+          "math_fsum_products_float64": 0.01540994644165039,
+          "math_fsum_rounded_fp16": 0.015411376953125
+        },
+        {
+          "coordinate_m_n": [
+            204,
+            740
+          ],
+          "actual_fp16": -0.0082855224609375,
+          "reference_fp16": 0.035125732421875,
+          "absolute_error": 0.0434112548828125,
+          "ulp_distance": 18622,
+          "dot_condition_number": 183743.6094607071,
+          "sum_abs_products_float64": 6453.077470779419,
+          "numpy_fp32_sum": 0.035125732421875,
+          "numpy_fp32_sum_rounded_fp16": 0.035125732421875,
+          "math_fsum_products_float64": 0.03512001037597656,
+          "math_fsum_rounded_fp16": 0.035125732421875
+        },
+        {
+          "coordinate_m_n": [
+            132,
+            653
+          ],
+          "actual_fp16": -0.008544921875,
+          "reference_fp16": 0.03387451171875,
+          "absolute_error": 0.04241943359375,
+          "ulp_distance": 18615,
+          "dot_condition_number": 192620.30731858444,
+          "sum_abs_products_float64": 6522.255250453949,
+          "numpy_fp32_sum": 0.033843994140625,
+          "numpy_fp32_sum_rounded_fp16": 0.033843994140625,
+          "math_fsum_products_float64": 0.03386068344116211,
+          "math_fsum_rounded_fp16": 0.03387451171875
+        },
+        {
+          "coordinate_m_n": [
+            221,
+            1455
+          ],
+          "actual_fp16": 0.01390838623046875,
+          "reference_fp16": -0.0185546875,
+          "absolute_error": 0.03246307373046875,
+          "ulp_distance": 18400,
+          "dot_condition_number": 354586.28750996065,
+          "sum_abs_products_float64": 6577.716037273407,
+          "numpy_fp32_sum": -0.0185546875,
+          "numpy_fp32_sum_rounded_fp16": -0.0185546875,
+          "math_fsum_products_float64": -0.018550395965576172,
+          "math_fsum_rounded_fp16": -0.0185546875
+        },
+        {
+          "coordinate_m_n": [
+            151,
+            1298
+          ],
+          "actual_fp16": -0.0132598876953125,
+          "reference_fp16": 0.0190887451171875,
+          "absolute_error": 0.0323486328125,
+          "ulp_distance": 18350,
+          "dot_condition_number": 342871.83655461395,
+          "sum_abs_products_float64": 6545.197463393211,
+          "numpy_fp32_sum": 0.01910400390625,
+          "numpy_fp32_sum_rounded_fp16": 0.01910400390625,
+          "math_fsum_products_float64": 0.019089341163635254,
+          "math_fsum_rounded_fp16": 0.0190887451171875
+        },
+        {
+          "coordinate_m_n": [
+            201,
+            33
+          ],
+          "actual_fp16": -0.0172119140625,
+          "reference_fp16": 0.0099029541015625,
+          "absolute_error": 0.0271148681640625,
+          "ulp_distance": 17787,
+          "dot_condition_number": 640391.8289811102,
+          "sum_abs_products_float64": 6340.93114221096,
+          "numpy_fp32_sum": 0.009899139404296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0099029541015625,
+          "math_fsum_products_float64": 0.009901642799377441,
+          "math_fsum_rounded_fp16": 0.0099029541015625
+        },
+        {
+          "coordinate_m_n": [
+            56,
+            474
+          ],
+          "actual_fp16": -0.0084228515625,
+          "reference_fp16": 0.00911712646484375,
+          "absolute_error": 0.01753997802734375,
+          "ulp_distance": 16636,
+          "dot_condition_number": 722452.2243425524,
+          "sum_abs_products_float64": 6589.09973859787,
+          "numpy_fp32_sum": 0.009124755859375,
+          "numpy_fp32_sum_rounded_fp16": 0.009124755859375,
+          "math_fsum_products_float64": 0.009120464324951172,
+          "math_fsum_rounded_fp16": 0.00911712646484375
+        }
+      ]
+    },
+    "torch_predecoded_fp32_output": {
+      "max_abs": 0.5,
+      "violations_at_existing_tolerance": 0,
+      "finite_ordered_fp16_ulp": {
+        "max": 188,
+        "count_over_1": 27,
+        "count_over_2": 18,
+        "finite_comparisons": 524288,
+        "nonfinite_actual": 0,
+        "nonfinite_reference": 0
+      },
+      "passes_original_two_ulp_gate": false,
+      "worst_examples": [
+        {
+          "coordinate_m_n": [
+            104,
+            1678
+          ],
+          "actual_fp16": 0.000308990478515625,
+          "reference_fp16": 0.00035381317138671875,
+          "absolute_error": 4.482269287109375e-05,
+          "ulp_distance": 188,
+          "dot_condition_number": 18903768.08625337,
+          "sum_abs_products_float64": 6688.402137756348,
+          "numpy_fp32_sum": 0.00035858154296875,
+          "numpy_fp32_sum_rounded_fp16": 0.00035858154296875,
+          "math_fsum_products_float64": 0.00035381317138671875,
+          "math_fsum_rounded_fp16": 0.00035381317138671875
+        },
+        {
+          "coordinate_m_n": [
+            174,
+            386
+          ],
+          "actual_fp16": 0.0005645751953125,
+          "reference_fp16": 0.000553131103515625,
+          "absolute_error": 1.1444091796875e-05,
+          "ulp_distance": 24,
+          "dot_condition_number": 11563490.020364186,
+          "sum_abs_products_float64": 6396.815233170986,
+          "numpy_fp32_sum": 0.00055694580078125,
+          "numpy_fp32_sum_rounded_fp16": 0.00055694580078125,
+          "math_fsum_products_float64": 0.0005531907081604004,
+          "math_fsum_rounded_fp16": 0.000553131103515625
+        },
+        {
+          "coordinate_m_n": [
+            14,
+            585
+          ],
+          "actual_fp16": 0.0038299560546875,
+          "reference_fp16": 0.003871917724609375,
+          "absolute_error": 4.1961669921875e-05,
+          "ulp_distance": 22,
+          "dot_condition_number": 1676751.4956885932,
+          "sum_abs_products_float64": 6490.64476108551,
+          "numpy_fp32_sum": 0.003875732421875,
+          "numpy_fp32_sum_rounded_fp16": 0.003875732421875,
+          "math_fsum_products_float64": 0.0038709640502929688,
+          "math_fsum_rounded_fp16": 0.003871917724609375
+        },
+        {
+          "coordinate_m_n": [
+            9,
+            1063
+          ],
+          "actual_fp16": 0.00165557861328125,
+          "reference_fp16": 0.001636505126953125,
+          "absolute_error": 1.9073486328125e-05,
+          "ulp_distance": 20,
+          "dot_condition_number": 3873038.4868919314,
+          "sum_abs_products_float64": 6340.09414935112,
+          "numpy_fp32_sum": 0.0016326904296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0016326904296875,
+          "math_fsum_products_float64": 0.0016369819641113281,
+          "math_fsum_rounded_fp16": 0.001636505126953125
+        },
+        {
+          "coordinate_m_n": [
+            187,
+            864
+          ],
+          "actual_fp16": -0.00119781494140625,
+          "reference_fp16": -0.0012149810791015625,
+          "absolute_error": 1.71661376953125e-05,
+          "ulp_distance": 18,
+          "dot_condition_number": 5541370.932522558,
+          "sum_abs_products_float64": 6735.3031668663025,
+          "numpy_fp32_sum": -0.00121307373046875,
+          "numpy_fp32_sum_rounded_fp16": -0.00121307373046875,
+          "math_fsum_products_float64": -0.0012154579162597656,
+          "math_fsum_rounded_fp16": -0.0012149810791015625
+        },
+        {
+          "coordinate_m_n": [
+            238,
+            1755
+          ],
+          "actual_fp16": -0.0021514892578125,
+          "reference_fp16": -0.002166748046875,
+          "absolute_error": 1.52587890625e-05,
+          "ulp_distance": 8,
+          "dot_condition_number": 3090774.686365137,
+          "sum_abs_products_float64": 6696.193116903305,
+          "numpy_fp32_sum": -0.002170562744140625,
+          "numpy_fp32_sum_rounded_fp16": -0.002170562744140625,
+          "math_fsum_products_float64": -0.0021665096282958984,
+          "math_fsum_rounded_fp16": -0.002166748046875
+        },
+        {
+          "coordinate_m_n": [
+            238,
+            1461
+          ],
+          "actual_fp16": -0.00202178955078125,
+          "reference_fp16": -0.0020084381103515625,
+          "absolute_error": 1.33514404296875e-05,
+          "ulp_distance": 7,
+          "dot_condition_number": 3302132.847103514,
+          "sum_abs_products_float64": 6632.129455566406,
+          "numpy_fp32_sum": -0.0019989013671875,
+          "numpy_fp32_sum_rounded_fp16": -0.0019989013671875,
+          "math_fsum_products_float64": -0.0020084381103515625,
+          "math_fsum_rounded_fp16": -0.0020084381103515625
+        },
+        {
+          "coordinate_m_n": [
+            150,
+            151
+          ],
+          "actual_fp16": 0.001983642578125,
+          "reference_fp16": 0.001995086669921875,
+          "absolute_error": 1.1444091796875e-05,
+          "ulp_distance": 6,
+          "dot_condition_number": 3331227.118546845,
+          "sum_abs_products_float64": 6646.086818695068,
+          "numpy_fp32_sum": 0.00199127197265625,
+          "numpy_fp32_sum_rounded_fp16": 0.00199127197265625,
+          "math_fsum_products_float64": 0.001995086669921875,
+          "math_fsum_rounded_fp16": 0.001995086669921875
+        }
+      ]
+    },
+    "torch_fp32": {
+      "max_abs": 0.25,
+      "violations_at_existing_tolerance": 0,
+      "finite_ordered_fp16_ulp": {
+        "max": 22,
+        "count_over_1": 20,
+        "count_over_2": 10,
+        "finite_comparisons": 524288,
+        "nonfinite_actual": 0,
+        "nonfinite_reference": 0
+      },
+      "passes_original_two_ulp_gate": false,
+      "worst_examples": [
+        {
+          "coordinate_m_n": [
+            187,
+            864
+          ],
+          "actual_fp16": -0.0012359619140625,
+          "reference_fp16": -0.0012149810791015625,
+          "absolute_error": 2.09808349609375e-05,
+          "ulp_distance": 22,
+          "dot_condition_number": 5541370.932522558,
+          "sum_abs_products_float64": 6735.3031668663025,
+          "numpy_fp32_sum": -0.00121307373046875,
+          "numpy_fp32_sum_rounded_fp16": -0.00121307373046875,
+          "math_fsum_products_float64": -0.0012154579162597656,
+          "math_fsum_rounded_fp16": -0.0012149810791015625
+        },
+        {
+          "coordinate_m_n": [
+            14,
+            585
+          ],
+          "actual_fp16": 0.00383758544921875,
+          "reference_fp16": 0.003871917724609375,
+          "absolute_error": 3.4332275390625e-05,
+          "ulp_distance": 18,
+          "dot_condition_number": 1676751.4956885932,
+          "sum_abs_products_float64": 6490.64476108551,
+          "numpy_fp32_sum": 0.003875732421875,
+          "numpy_fp32_sum_rounded_fp16": 0.003875732421875,
+          "math_fsum_products_float64": 0.0038709640502929688,
+          "math_fsum_rounded_fp16": 0.003871917724609375
+        },
+        {
+          "coordinate_m_n": [
+            150,
+            151
+          ],
+          "actual_fp16": 0.00202178955078125,
+          "reference_fp16": 0.001995086669921875,
+          "absolute_error": 2.6702880859375e-05,
+          "ulp_distance": 14,
+          "dot_condition_number": 3331227.118546845,
+          "sum_abs_products_float64": 6646.086818695068,
+          "numpy_fp32_sum": 0.00199127197265625,
+          "numpy_fp32_sum_rounded_fp16": 0.00199127197265625,
+          "math_fsum_products_float64": 0.001995086669921875,
+          "math_fsum_rounded_fp16": 0.001995086669921875
+        },
+        {
+          "coordinate_m_n": [
+            104,
+            1678
+          ],
+          "actual_fp16": 0.0003509521484375,
+          "reference_fp16": 0.00035381317138671875,
+          "absolute_error": 2.86102294921875e-06,
+          "ulp_distance": 12,
+          "dot_condition_number": 18903768.08625337,
+          "sum_abs_products_float64": 6688.402137756348,
+          "numpy_fp32_sum": 0.00035858154296875,
+          "numpy_fp32_sum_rounded_fp16": 0.00035858154296875,
+          "math_fsum_products_float64": 0.00035381317138671875,
+          "math_fsum_rounded_fp16": 0.00035381317138671875
+        },
+        {
+          "coordinate_m_n": [
+            9,
+            1063
+          ],
+          "actual_fp16": 0.00164794921875,
+          "reference_fp16": 0.001636505126953125,
+          "absolute_error": 1.1444091796875e-05,
+          "ulp_distance": 12,
+          "dot_condition_number": 3873038.4868919314,
+          "sum_abs_products_float64": 6340.09414935112,
+          "numpy_fp32_sum": 0.0016326904296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0016326904296875,
+          "math_fsum_products_float64": 0.0016369819641113281,
+          "math_fsum_rounded_fp16": 0.001636505126953125
+        },
+        {
+          "coordinate_m_n": [
+            174,
+            386
+          ],
+          "actual_fp16": 0.00054931640625,
+          "reference_fp16": 0.000553131103515625,
+          "absolute_error": 3.814697265625e-06,
+          "ulp_distance": 8,
+          "dot_condition_number": 11563490.020364186,
+          "sum_abs_products_float64": 6396.815233170986,
+          "numpy_fp32_sum": 0.00055694580078125,
+          "numpy_fp32_sum_rounded_fp16": 0.00055694580078125,
+          "math_fsum_products_float64": 0.0005531907081604004,
+          "math_fsum_rounded_fp16": 0.000553131103515625
+        },
+        {
+          "coordinate_m_n": [
+            148,
+            1267
+          ],
+          "actual_fp16": 0.00293731689453125,
+          "reference_fp16": 0.0029277801513671875,
+          "absolute_error": 9.5367431640625e-06,
+          "ulp_distance": 5,
+          "dot_condition_number": 2348299.442273245,
+          "sum_abs_products_float64": 6876.424252986908,
+          "numpy_fp32_sum": 0.0029296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0029296875,
+          "math_fsum_products_float64": 0.0029282569885253906,
+          "math_fsum_rounded_fp16": 0.0029277801513671875
+        },
+        {
+          "coordinate_m_n": [
+            215,
+            1041
+          ],
+          "actual_fp16": -0.00243377685546875,
+          "reference_fp16": -0.00244140625,
+          "absolute_error": 7.62939453125e-06,
+          "ulp_distance": 4,
+          "dot_condition_number": 2614396.877319789,
+          "sum_abs_products_float64": 6381.55823469162,
+          "numpy_fp32_sum": -0.00244140625,
+          "numpy_fp32_sum_rounded_fp16": -0.00244140625,
+          "math_fsum_products_float64": -0.002440929412841797,
+          "math_fsum_rounded_fp16": -0.00244140625
+        }
+      ]
+    },
+    "torch_cuda_fp64_accum_fp16_output": {
+      "max_abs": 0.25,
+      "violations_at_existing_tolerance": 0,
+      "finite_ordered_fp16_ulp": {
+        "max": 1,
+        "count_over_1": 0,
+        "count_over_2": 0,
+        "finite_comparisons": 524288,
+        "nonfinite_actual": 0,
+        "nonfinite_reference": 0
+      },
+      "passes_original_two_ulp_gate": true,
+      "worst_examples": [
+        {
+          "coordinate_m_n": [
+            247,
+            810
+          ],
+          "actual_fp16": -42.0625,
+          "reference_fp16": -42.09375,
+          "absolute_error": 0.03125,
+          "ulp_distance": 1,
+          "dot_condition_number": 154.07791734548348,
+          "sum_abs_products_float64": 6483.3101596832275,
+          "numpy_fp32_sum": -42.0781364440918,
+          "numpy_fp32_sum_rounded_fp16": -42.09375,
+          "math_fsum_products_float64": -42.07812690734863,
+          "math_fsum_rounded_fp16": -42.09375
+        },
+        {
+          "coordinate_m_n": [
+            245,
+            697
+          ],
+          "actual_fp16": 287.0,
+          "reference_fp16": 286.75,
+          "absolute_error": 0.25,
+          "ulp_distance": 1,
+          "dot_condition_number": 23.4499291097092,
+          "sum_abs_products_float64": 6727.198290348053,
+          "numpy_fp32_sum": 286.8749694824219,
+          "numpy_fp32_sum_rounded_fp16": 286.75,
+          "math_fsum_products_float64": 286.87499475479126,
+          "math_fsum_rounded_fp16": 286.75
+        },
+        {
+          "coordinate_m_n": [
+            236,
+            1094
+          ],
+          "actual_fp16": 142.75,
+          "reference_fp16": 142.625,
+          "absolute_error": 0.125,
+          "ulp_distance": 1,
+          "dot_condition_number": 45.674130968559105,
+          "sum_abs_products_float64": 6517.127235889435,
+          "numpy_fp32_sum": 142.6875,
+          "numpy_fp32_sum_rounded_fp16": 142.75,
+          "math_fsum_products_float64": 142.68749284744263,
+          "math_fsum_rounded_fp16": 142.625
+        },
+        {
+          "coordinate_m_n": [
+            234,
+            131
+          ],
+          "actual_fp16": 194.75,
+          "reference_fp16": 194.875,
+          "absolute_error": 0.125,
+          "ulp_distance": 1,
+          "dot_condition_number": 33.47248744926685,
+          "sum_abs_products_float64": 6520.859088897705,
+          "numpy_fp32_sum": 194.8125,
+          "numpy_fp32_sum_rounded_fp16": 194.75,
+          "math_fsum_products_float64": 194.81250381469727,
+          "math_fsum_rounded_fp16": 194.875
+        },
+        {
+          "coordinate_m_n": [
+            220,
+            1601
+          ],
+          "actual_fp16": -50.25,
+          "reference_fp16": -50.21875,
+          "absolute_error": 0.03125,
+          "ulp_distance": 1,
+          "dot_condition_number": 131.63471837815823,
+          "sum_abs_products_float64": 6612.587649106979,
+          "numpy_fp32_sum": -50.23438262939453,
+          "numpy_fp32_sum_rounded_fp16": -50.25,
+          "math_fsum_products_float64": -50.234373807907104,
+          "math_fsum_rounded_fp16": -50.21875
+        },
+        {
+          "coordinate_m_n": [
+            214,
+            774
+          ],
+          "actual_fp16": 164.25,
+          "reference_fp16": 164.125,
+          "absolute_error": 0.125,
+          "ulp_distance": 1,
+          "dot_condition_number": 39.64639093246658,
+          "sum_abs_products_float64": 6509.441773414612,
+          "numpy_fp32_sum": 164.1875,
+          "numpy_fp32_sum_rounded_fp16": 164.25,
+          "math_fsum_products_float64": 164.18749904632568,
+          "math_fsum_rounded_fp16": 164.125
+        },
+        {
+          "coordinate_m_n": [
+            206,
+            1106
+          ],
+          "actual_fp16": -143.0,
+          "reference_fp16": -142.875,
+          "absolute_error": 0.125,
+          "ulp_distance": 1,
+          "dot_condition_number": 45.73179540168937,
+          "sum_abs_products_float64": 6536.788287162781,
+          "numpy_fp32_sum": -142.9375,
+          "numpy_fp32_sum_rounded_fp16": -143.0,
+          "math_fsum_products_float64": -142.93749523162842,
+          "math_fsum_rounded_fp16": -142.875
+        },
+        {
+          "coordinate_m_n": [
+            200,
+            534
+          ],
+          "actual_fp16": -209.75,
+          "reference_fp16": -209.875,
+          "absolute_error": 0.125,
+          "ulp_distance": 1,
+          "dot_condition_number": 30.903730660240793,
+          "sum_abs_products_float64": 6483.989077568054,
+          "numpy_fp32_sum": -209.81251525878906,
+          "numpy_fp32_sum_rounded_fp16": -209.875,
+          "math_fsum_products_float64": -209.81250286102295,
+          "math_fsum_rounded_fp16": -209.875
+        }
+      ]
+    },
+    "tilelang_auto": {
+      "max_abs": 0.5,
+      "violations_at_existing_tolerance": 0,
+      "finite_ordered_fp16_ulp": {
+        "max": 204,
+        "count_over_1": 55,
+        "count_over_2": 33,
+        "finite_comparisons": 524288,
+        "nonfinite_actual": 0,
+        "nonfinite_reference": 0
+      },
+      "passes_original_two_ulp_gate": false,
+      "worst_examples": [
+        {
+          "coordinate_m_n": [
+            104,
+            1678
+          ],
+          "actual_fp16": 0.00030517578125,
+          "reference_fp16": 0.00035381317138671875,
+          "absolute_error": 4.863739013671875e-05,
+          "ulp_distance": 204,
+          "dot_condition_number": 18903768.08625337,
+          "sum_abs_products_float64": 6688.402137756348,
+          "numpy_fp32_sum": 0.00035858154296875,
+          "numpy_fp32_sum_rounded_fp16": 0.00035858154296875,
+          "math_fsum_products_float64": 0.00035381317138671875,
+          "math_fsum_rounded_fp16": 0.00035381317138671875
+        },
+        {
+          "coordinate_m_n": [
+            174,
+            386
+          ],
+          "actual_fp16": 0.000583648681640625,
+          "reference_fp16": 0.000553131103515625,
+          "absolute_error": 3.0517578125e-05,
+          "ulp_distance": 64,
+          "dot_condition_number": 11563490.020364186,
+          "sum_abs_products_float64": 6396.815233170986,
+          "numpy_fp32_sum": 0.00055694580078125,
+          "numpy_fp32_sum_rounded_fp16": 0.00055694580078125,
+          "math_fsum_products_float64": 0.0005531907081604004,
+          "math_fsum_rounded_fp16": 0.000553131103515625
+        },
+        {
+          "coordinate_m_n": [
+            9,
+            1063
+          ],
+          "actual_fp16": 0.00159454345703125,
+          "reference_fp16": 0.001636505126953125,
+          "absolute_error": 4.1961669921875e-05,
+          "ulp_distance": 44,
+          "dot_condition_number": 3873038.4868919314,
+          "sum_abs_products_float64": 6340.09414935112,
+          "numpy_fp32_sum": 0.0016326904296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0016326904296875,
+          "math_fsum_products_float64": 0.0016369819641113281,
+          "math_fsum_rounded_fp16": 0.001636505126953125
+        },
+        {
+          "coordinate_m_n": [
+            14,
+            585
+          ],
+          "actual_fp16": 0.003978729248046875,
+          "reference_fp16": 0.003871917724609375,
+          "absolute_error": 0.0001068115234375,
+          "ulp_distance": 37,
+          "dot_condition_number": 1676751.4956885932,
+          "sum_abs_products_float64": 6490.64476108551,
+          "numpy_fp32_sum": 0.003875732421875,
+          "numpy_fp32_sum_rounded_fp16": 0.003875732421875,
+          "math_fsum_products_float64": 0.0038709640502929688,
+          "math_fsum_rounded_fp16": 0.003871917724609375
+        },
+        {
+          "coordinate_m_n": [
+            148,
+            1267
+          ],
+          "actual_fp16": 0.0029773712158203125,
+          "reference_fp16": 0.0029277801513671875,
+          "absolute_error": 4.9591064453125e-05,
+          "ulp_distance": 26,
+          "dot_condition_number": 2348299.442273245,
+          "sum_abs_products_float64": 6876.424252986908,
+          "numpy_fp32_sum": 0.0029296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0029296875,
+          "math_fsum_products_float64": 0.0029282569885253906,
+          "math_fsum_rounded_fp16": 0.0029277801513671875
+        },
+        {
+          "coordinate_m_n": [
+            139,
+            261
+          ],
+          "actual_fp16": -0.0022335052490234375,
+          "reference_fp16": -0.0022830963134765625,
+          "absolute_error": 4.9591064453125e-05,
+          "ulp_distance": 26,
+          "dot_condition_number": 2780119.8498616116,
+          "sum_abs_products_float64": 6346.287131905556,
+          "numpy_fp32_sum": -0.002285003662109375,
+          "numpy_fp32_sum_rounded_fp16": -0.002285003662109375,
+          "math_fsum_products_float64": -0.00228273868560791,
+          "math_fsum_rounded_fp16": -0.0022830963134765625
+        },
+        {
+          "coordinate_m_n": [
+            1,
+            728
+          ],
+          "actual_fp16": 0.01403045654296875,
+          "reference_fp16": 0.0139312744140625,
+          "absolute_error": 9.918212890625e-05,
+          "ulp_distance": 13,
+          "dot_condition_number": 475595.4396386532,
+          "sum_abs_products_float64": 6627.464832305908,
+          "numpy_fp32_sum": 0.013916015625,
+          "numpy_fp32_sum_rounded_fp16": 0.013916015625,
+          "math_fsum_products_float64": 0.013935089111328125,
+          "math_fsum_rounded_fp16": 0.0139312744140625
+        },
+        {
+          "coordinate_m_n": [
+            76,
+            1227
+          ],
+          "actual_fp16": -0.00579833984375,
+          "reference_fp16": -0.0057525634765625,
+          "absolute_error": 4.57763671875e-05,
+          "ulp_distance": 12,
+          "dot_condition_number": 1134115.1292674842,
+          "sum_abs_products_float64": 6526.232423782349,
+          "numpy_fp32_sum": -0.0057373046875,
+          "numpy_fp32_sum_rounded_fp16": -0.0057373046875,
+          "math_fsum_products_float64": -0.0057544708251953125,
+          "math_fsum_rounded_fp16": -0.0057525634765625
+        }
+      ]
+    },
+    "tilelang_fragment": {
+      "max_abs": 0.5,
+      "violations_at_existing_tolerance": 0,
+      "finite_ordered_fp16_ulp": {
+        "max": 204,
+        "count_over_1": 55,
+        "count_over_2": 33,
+        "finite_comparisons": 524288,
+        "nonfinite_actual": 0,
+        "nonfinite_reference": 0
+      },
+      "passes_original_two_ulp_gate": false,
+      "worst_examples": [
+        {
+          "coordinate_m_n": [
+            104,
+            1678
+          ],
+          "actual_fp16": 0.00030517578125,
+          "reference_fp16": 0.00035381317138671875,
+          "absolute_error": 4.863739013671875e-05,
+          "ulp_distance": 204,
+          "dot_condition_number": 18903768.08625337,
+          "sum_abs_products_float64": 6688.402137756348,
+          "numpy_fp32_sum": 0.00035858154296875,
+          "numpy_fp32_sum_rounded_fp16": 0.00035858154296875,
+          "math_fsum_products_float64": 0.00035381317138671875,
+          "math_fsum_rounded_fp16": 0.00035381317138671875
+        },
+        {
+          "coordinate_m_n": [
+            174,
+            386
+          ],
+          "actual_fp16": 0.000583648681640625,
+          "reference_fp16": 0.000553131103515625,
+          "absolute_error": 3.0517578125e-05,
+          "ulp_distance": 64,
+          "dot_condition_number": 11563490.020364186,
+          "sum_abs_products_float64": 6396.815233170986,
+          "numpy_fp32_sum": 0.00055694580078125,
+          "numpy_fp32_sum_rounded_fp16": 0.00055694580078125,
+          "math_fsum_products_float64": 0.0005531907081604004,
+          "math_fsum_rounded_fp16": 0.000553131103515625
+        },
+        {
+          "coordinate_m_n": [
+            9,
+            1063
+          ],
+          "actual_fp16": 0.00159454345703125,
+          "reference_fp16": 0.001636505126953125,
+          "absolute_error": 4.1961669921875e-05,
+          "ulp_distance": 44,
+          "dot_condition_number": 3873038.4868919314,
+          "sum_abs_products_float64": 6340.09414935112,
+          "numpy_fp32_sum": 0.0016326904296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0016326904296875,
+          "math_fsum_products_float64": 0.0016369819641113281,
+          "math_fsum_rounded_fp16": 0.001636505126953125
+        },
+        {
+          "coordinate_m_n": [
+            14,
+            585
+          ],
+          "actual_fp16": 0.003978729248046875,
+          "reference_fp16": 0.003871917724609375,
+          "absolute_error": 0.0001068115234375,
+          "ulp_distance": 37,
+          "dot_condition_number": 1676751.4956885932,
+          "sum_abs_products_float64": 6490.64476108551,
+          "numpy_fp32_sum": 0.003875732421875,
+          "numpy_fp32_sum_rounded_fp16": 0.003875732421875,
+          "math_fsum_products_float64": 0.0038709640502929688,
+          "math_fsum_rounded_fp16": 0.003871917724609375
+        },
+        {
+          "coordinate_m_n": [
+            148,
+            1267
+          ],
+          "actual_fp16": 0.0029773712158203125,
+          "reference_fp16": 0.0029277801513671875,
+          "absolute_error": 4.9591064453125e-05,
+          "ulp_distance": 26,
+          "dot_condition_number": 2348299.442273245,
+          "sum_abs_products_float64": 6876.424252986908,
+          "numpy_fp32_sum": 0.0029296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0029296875,
+          "math_fsum_products_float64": 0.0029282569885253906,
+          "math_fsum_rounded_fp16": 0.0029277801513671875
+        },
+        {
+          "coordinate_m_n": [
+            139,
+            261
+          ],
+          "actual_fp16": -0.0022335052490234375,
+          "reference_fp16": -0.0022830963134765625,
+          "absolute_error": 4.9591064453125e-05,
+          "ulp_distance": 26,
+          "dot_condition_number": 2780119.8498616116,
+          "sum_abs_products_float64": 6346.287131905556,
+          "numpy_fp32_sum": -0.002285003662109375,
+          "numpy_fp32_sum_rounded_fp16": -0.002285003662109375,
+          "math_fsum_products_float64": -0.00228273868560791,
+          "math_fsum_rounded_fp16": -0.0022830963134765625
+        },
+        {
+          "coordinate_m_n": [
+            1,
+            728
+          ],
+          "actual_fp16": 0.01403045654296875,
+          "reference_fp16": 0.0139312744140625,
+          "absolute_error": 9.918212890625e-05,
+          "ulp_distance": 13,
+          "dot_condition_number": 475595.4396386532,
+          "sum_abs_products_float64": 6627.464832305908,
+          "numpy_fp32_sum": 0.013916015625,
+          "numpy_fp32_sum_rounded_fp16": 0.013916015625,
+          "math_fsum_products_float64": 0.013935089111328125,
+          "math_fsum_rounded_fp16": 0.0139312744140625
+        },
+        {
+          "coordinate_m_n": [
+            76,
+            1227
+          ],
+          "actual_fp16": -0.00579833984375,
+          "reference_fp16": -0.0057525634765625,
+          "absolute_error": 4.57763671875e-05,
+          "ulp_distance": 12,
+          "dot_condition_number": 1134115.1292674842,
+          "sum_abs_products_float64": 6526.232423782349,
+          "numpy_fp32_sum": -0.0057373046875,
+          "numpy_fp32_sum_rounded_fp16": -0.0057373046875,
+          "math_fsum_products_float64": -0.0057544708251953125,
+          "math_fsum_rounded_fp16": -0.0057525634765625
+        }
+      ]
+    },
+    "tilelang_shared": {
+      "max_abs": 0.5,
+      "violations_at_existing_tolerance": 0,
+      "finite_ordered_fp16_ulp": {
+        "max": 204,
+        "count_over_1": 55,
+        "count_over_2": 33,
+        "finite_comparisons": 524288,
+        "nonfinite_actual": 0,
+        "nonfinite_reference": 0
+      },
+      "passes_original_two_ulp_gate": false,
+      "worst_examples": [
+        {
+          "coordinate_m_n": [
+            104,
+            1678
+          ],
+          "actual_fp16": 0.00030517578125,
+          "reference_fp16": 0.00035381317138671875,
+          "absolute_error": 4.863739013671875e-05,
+          "ulp_distance": 204,
+          "dot_condition_number": 18903768.08625337,
+          "sum_abs_products_float64": 6688.402137756348,
+          "numpy_fp32_sum": 0.00035858154296875,
+          "numpy_fp32_sum_rounded_fp16": 0.00035858154296875,
+          "math_fsum_products_float64": 0.00035381317138671875,
+          "math_fsum_rounded_fp16": 0.00035381317138671875
+        },
+        {
+          "coordinate_m_n": [
+            174,
+            386
+          ],
+          "actual_fp16": 0.000583648681640625,
+          "reference_fp16": 0.000553131103515625,
+          "absolute_error": 3.0517578125e-05,
+          "ulp_distance": 64,
+          "dot_condition_number": 11563490.020364186,
+          "sum_abs_products_float64": 6396.815233170986,
+          "numpy_fp32_sum": 0.00055694580078125,
+          "numpy_fp32_sum_rounded_fp16": 0.00055694580078125,
+          "math_fsum_products_float64": 0.0005531907081604004,
+          "math_fsum_rounded_fp16": 0.000553131103515625
+        },
+        {
+          "coordinate_m_n": [
+            9,
+            1063
+          ],
+          "actual_fp16": 0.00159454345703125,
+          "reference_fp16": 0.001636505126953125,
+          "absolute_error": 4.1961669921875e-05,
+          "ulp_distance": 44,
+          "dot_condition_number": 3873038.4868919314,
+          "sum_abs_products_float64": 6340.09414935112,
+          "numpy_fp32_sum": 0.0016326904296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0016326904296875,
+          "math_fsum_products_float64": 0.0016369819641113281,
+          "math_fsum_rounded_fp16": 0.001636505126953125
+        },
+        {
+          "coordinate_m_n": [
+            14,
+            585
+          ],
+          "actual_fp16": 0.003978729248046875,
+          "reference_fp16": 0.003871917724609375,
+          "absolute_error": 0.0001068115234375,
+          "ulp_distance": 37,
+          "dot_condition_number": 1676751.4956885932,
+          "sum_abs_products_float64": 6490.64476108551,
+          "numpy_fp32_sum": 0.003875732421875,
+          "numpy_fp32_sum_rounded_fp16": 0.003875732421875,
+          "math_fsum_products_float64": 0.0038709640502929688,
+          "math_fsum_rounded_fp16": 0.003871917724609375
+        },
+        {
+          "coordinate_m_n": [
+            148,
+            1267
+          ],
+          "actual_fp16": 0.0029773712158203125,
+          "reference_fp16": 0.0029277801513671875,
+          "absolute_error": 4.9591064453125e-05,
+          "ulp_distance": 26,
+          "dot_condition_number": 2348299.442273245,
+          "sum_abs_products_float64": 6876.424252986908,
+          "numpy_fp32_sum": 0.0029296875,
+          "numpy_fp32_sum_rounded_fp16": 0.0029296875,
+          "math_fsum_products_float64": 0.0029282569885253906,
+          "math_fsum_rounded_fp16": 0.0029277801513671875
+        },
+        {
+          "coordinate_m_n": [
+            139,
+            261
+          ],
+          "actual_fp16": -0.0022335052490234375,
+          "reference_fp16": -0.0022830963134765625,
+          "absolute_error": 4.9591064453125e-05,
+          "ulp_distance": 26,
+          "dot_condition_number": 2780119.8498616116,
+          "sum_abs_products_float64": 6346.287131905556,
+          "numpy_fp32_sum": -0.002285003662109375,
+          "numpy_fp32_sum_rounded_fp16": -0.002285003662109375,
+          "math_fsum_products_float64": -0.00228273868560791,
+          "math_fsum_rounded_fp16": -0.0022830963134765625
+        },
+        {
+          "coordinate_m_n": [
+            1,
+            728
+          ],
+          "actual_fp16": 0.01403045654296875,
+          "reference_fp16": 0.0139312744140625,
+          "absolute_error": 9.918212890625e-05,
+          "ulp_distance": 13,
+          "dot_condition_number": 475595.4396386532,
+          "sum_abs_products_float64": 6627.464832305908,
+          "numpy_fp32_sum": 0.013916015625,
+          "numpy_fp32_sum_rounded_fp16": 0.013916015625,
+          "math_fsum_products_float64": 0.013935089111328125,
+          "math_fsum_rounded_fp16": 0.0139312744140625
+        },
+        {
+          "coordinate_m_n": [
+            76,
+            1227
+          ],
+          "actual_fp16": -0.00579833984375,
+          "reference_fp16": -0.0057525634765625,
+          "absolute_error": 4.57763671875e-05,
+          "ulp_distance": 12,
+          "dot_condition_number": 1134115.1292674842,
+          "sum_abs_products_float64": 6526.232423782349,
+          "numpy_fp32_sum": -0.0057373046875,
+          "numpy_fp32_sum_rounded_fp16": -0.0057373046875,
+          "math_fsum_products_float64": -0.0057544708251953125,
+          "math_fsum_rounded_fp16": -0.0057525634765625
+        }
+      ]
+    }
+  },
+  "passes_original_two_ulp_gate": false
+}

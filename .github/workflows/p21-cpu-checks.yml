@@ -23,14 +23,17 @@ jobs:
         with:
           python-version: "3.11.13"
 
-      - name: Install pinned CPU lint tool
-        run: python -m pip install --disable-pip-version-check --no-input "ruff==0.16.5"
+      - name: Install pinned CPU check tools
+        run: python -m pip install --disable-pip-version-check --no-input "ruff==0.16.5" "numpy==2.3.4"
 
       - name: Check Python syntax and formatting
         run: |
           python -m compileall -q examples/dequantize_gemm/p21_fp16xint4.py examples/dequantize_gemm/p21_quickstart.py tools/p21_verify.py
           python -m ruff check examples/dequantize_gemm/p21_fp16xint4.py examples/dequantize_gemm/p21_quickstart.py tools/p21_verify.py
           python -m ruff format --check examples/dequantize_gemm/p21_fp16xint4.py examples/dequantize_gemm/p21_quickstart.py tools/p21_verify.py
+          python -m ruff check tools/p21_diagnose.py testing/python/tools/test_p21_fp16_ulp.py
+          python -m ruff format --check tools/p21_diagnose.py testing/python/tools/test_p21_fp16_ulp.py
+          python testing/python/tools/test_p21_fp16_ulp.py
 
       - name: Validate retained GPU evidence without running CUDA
         run: |

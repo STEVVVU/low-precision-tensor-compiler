@@ -16,6 +16,8 @@ Run `examples/dequantize_gemm/p21_quickstart.py` by script path from the reposit
 
 Run Doctor, then Drive from [the verification skill](../SKILL.md). Drive compiles small odd-tail and medium cases, then checks generated CUDA and TIR for the selected compile-time plan.
 
+For the frozen 256x2048x2048 numerical investigation, run `& $python tools\p21_diagnose.py` with the environment from the verification skill in an exclusive GPU slot. It writes `large-gemm-numerical-diagnostic-expanded.json` by default and reports finite FP16 ULPs, worst coordinates, per-dot references, precision flags, and a CUDA FP64 accumulation control. Doctor, strict Drive and the expanded diagnostic ran successfully in `.verification-runs/P21/numerical-20261022-0907/`. Its execution succeeded, but TileLang failed the unchanged original numerical target on the large case. See [the numerical diagnosis](../../../../docs/evidence/P21/numerical-diagnosis.md). It does not change the Drive or benchmark acceptance gate.
+
 ## Gotchas
 
 - `packed_B` must be contiguous `uint8` with shape `[N, ceil(K/2)]`. The even K value occupies the low nibble.
