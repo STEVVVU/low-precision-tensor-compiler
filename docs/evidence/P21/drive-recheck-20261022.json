@@ -1,0 +1,127 @@
+{
+  "scope": "Strict default Drive recheck after memory became available; not an expanded-quality or performance rerun.",
+  "source_commit": "35c3b9eaa048773ab8c2dde17a77f5dbff1aed5a",
+  "raw_drive_sha256": "9cba3eae95b949be0775006e07788e972a63c0337658d2ced0cd362a239cc289",
+  "pass": true,
+  "tilelang": "0.1.15",
+  "torch": "2.11.0+cu128",
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "target": "sm_120",
+  "cases": [
+    {
+      "name": "small-edge-fragment",
+      "shape_mnk": [
+        3,
+        17,
+        35
+      ],
+      "placement": "fragment",
+      "error_vs_cpu_float64_rounded_fp16": {
+        "max_abs": 0.0,
+        "max_ulp": 0,
+        "outputs_over_1_ulp": 0,
+        "output_count": 51
+      },
+      "source_checks": {
+        "cuda_kernel": true,
+        "packed_byte_input": true,
+        "signed_nibble_decode": true,
+        "selected_shared_decode_present": false
+      }
+    },
+    {
+      "name": "small-edge-shared-control",
+      "shape_mnk": [
+        3,
+        17,
+        35
+      ],
+      "placement": "shared",
+      "error_vs_cpu_float64_rounded_fp16": {
+        "max_abs": 0.0,
+        "max_ulp": 0,
+        "outputs_over_1_ulp": 0,
+        "output_count": 51
+      },
+      "source_checks": {
+        "cuda_kernel": true,
+        "packed_byte_input": true,
+        "signed_nibble_decode": true,
+        "selected_shared_decode_present": true
+      }
+    },
+    {
+      "name": "rectangular-odd-tails",
+      "shape_mnk": [
+        48,
+        129,
+        65
+      ],
+      "placement": "shared",
+      "error_vs_cpu_float64_rounded_fp16": {
+        "max_abs": 0.0,
+        "max_ulp": 0,
+        "outputs_over_1_ulp": 0,
+        "output_count": 6192
+      },
+      "source_checks": {
+        "cuda_kernel": true,
+        "packed_byte_input": true,
+        "signed_nibble_decode": true,
+        "selected_shared_decode_present": true
+      }
+    },
+    {
+      "name": "medium",
+      "shape_mnk": [
+        128,
+        256,
+        256
+      ],
+      "placement": "shared",
+      "error_vs_cpu_float64_rounded_fp16": {
+        "max_abs": 0.0625,
+        "max_ulp": 2,
+        "outputs_over_1_ulp": 1,
+        "output_count": 32768
+      },
+      "source_checks": {
+        "cuda_kernel": true,
+        "packed_byte_input": true,
+        "signed_nibble_decode": true,
+        "selected_shared_decode_present": true
+      }
+    }
+  ],
+  "special_values": {
+    "max_abs": 0.0,
+    "max_ulp": 0,
+    "outputs_over_1_ulp": 0,
+    "output_count": 16
+  },
+  "invalid_input_checks": [
+    "out-of-range weights",
+    "wrong activation dtype",
+    "packed-weight shape"
+  ],
+  "tolerance": {
+    "atol": 0.0625,
+    "rtol": 0.001,
+    "output_dtype": "float16",
+    "fp16_ulp_limit": 2,
+    "rationale": "FP32 tile accumulation is rounded once to FP16; the deterministic medium run has at most two half-ULP steps and reports absolute error separately."
+  },
+  "supervisor": {
+    "started_utc": "2026-10-22T10:51:28.5600713Z",
+    "finished_utc": "2026-10-22T10:51:33.4859632Z",
+    "pid": 62828,
+    "timed_out": false,
+    "exit_code": 0,
+    "output_directory": ".verification-runs/P21-ram-resume-20261022-1052"
+  },
+  "limitations": [
+    "The six expanded shapes that failed two ULP remain failed.",
+    "No application precision budget or general reduction-error guarantee was established.",
+    "No new performance measurement is claimed."
+  ]
+}
