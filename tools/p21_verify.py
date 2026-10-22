@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import platform
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -18,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / ".verification-runs" / "P21"
 ATOL = 0.0625
 RTOL = 0.001
+BENCHMARK_SHAPES = ((1, 4096, 4096), (16, 1024, 1024), (128, 1024, 1024), (512, 1024, 1024), (256, 2048, 2048), (33, 257, 513))
+HELD_OUT_SHAPES = ((256, 1536, 1536), (384, 768, 1024), (192, 1024, 2048))
 
 
 def doctor() -> tuple[torch.device, str, str]:
@@ -264,7 +270,7 @@ def _torch_unpack_matmul(a: torch.Tensor, packed: torch.Tensor, k: int) -> torch
     low = torch.where(low >= 8, low - 16, low)
     high = torch.where(high >= 8, high - 16, high)
     weights = torch.stack((low, high), dim=-1).reshape(packed.shape[0], -1)[:, :k].to(torch.float16)
-    return a @ weights.T
+    return torch.mm(a, weights.T, out_dtype=torch.float32).to(torch.float16)
 
 
 def _median_observation(auto: list[float], control: list[float]) -> str:
@@ -279,44 +285,94 @@ def _median_observation(auto: list[float], control: list[float]) -> str:
     return f"median-only observation: {observation}; no statistical conclusion"
 
 
-def benchmark(evidence_dir: Path, samples: int = 7, calls_per_sample: int = 5) -> dict[str, object]:
+def _benchmark_numerical_policy(shape: tuple[int, int, int]) -> dict[str, object]:
+    strict = shape == (128, 256, 256)
+    return {
+        "atol": ATOL,
+        "rtol": RTOL,
+        "fp16_ulp_limit": 2 if strict else None,
+        "original_fp16_ulp_limit": 2,
+        "scope": "original medium control: mixed tolerance and two-ULP gate"
+        if strict
+        else "expanded diagnostic: mixed tolerance only; two-ULP acceptance must be assessed separately",
+    }
+
+
+def benchmark(
+    evidence_dir: Path,
+    samples: int = 7,
+    calls_per_sample: int = 5,
+    shape: tuple[int, int, int] = (128, 256, 256),
+) -> dict[str, object]:
+    if samples < 5 or calls_per_sample < 1:
+        raise ValueError("comparison needs at least five repeats and one call")
+    if shutil.disk_usage(ROOT).free < 10 * 1024**3:
+        raise RuntimeError("benchmark requires 10 GiB free disk")
     device, gpu_name, target = doctor()
     compile_kernel, gemm, pack = _load_p21_module()
-    m, n, k = 128, 256, 256
+    m, n, k = shape
+    numerical_policy = _benchmark_numerical_policy(shape)
     a_cpu, q_cpu = _inputs(m, n, k, 21)
     a = torch.from_numpy(a_cpu.copy()).to(device)
     packed = pack(torch.from_numpy(q_cpu.copy()).to(device))
-    kernel, plan = compile_kernel(m, n, k, device, "auto")
+    compile_seconds = {}
+    for placement in ("auto", "fragment", "shared"):
+        started = time.perf_counter()
+        kernel, selected_plan = compile_kernel(m, n, k, device, placement)
+        compile_seconds[placement] = time.perf_counter() - started
+        if placement == "auto":
+            plan = selected_plan
+    kernel, _ = compile_kernel(m, n, k, device, "auto")
     output = torch.empty((m, n), dtype=torch.float16, device=device)
     kernel(a, packed, output)
     torch.cuda.synchronize(device)
+    decoded = torch.from_numpy(q_cpu.copy()).to(device=device, dtype=torch.float16)
 
     functions = {
         "torch_unpack_plus_matmul": lambda: _torch_unpack_matmul(a, packed, k),
+        "torch_predecoded_cublas": lambda: torch.mm(a, decoded.T, out_dtype=torch.float32).to(torch.float16),
         "tilelang_auto": lambda: gemm(a, packed, "auto")[0],
         "tilelang_fragment_control": lambda: gemm(a, packed, "fragment")[0],
         "tilelang_shared_control": lambda: gemm(a, packed, "shared")[0],
     }
-    for fn in functions.values():
-        for _ in range(5):
+    expected_outputs = {}
+    errors = {}
+    for name, fn in functions.items():
+        for _ in range(100):
             result = fn()
         torch.cuda.synchronize(device)
-        _check_output(result, a_cpu, q_cpu, a, device)
+        try:
+            errors[name] = _check_output(result, a_cpu, q_cpu, a, device, max_ulp_limit=numerical_policy["fp16_ulp_limit"])
+        except AssertionError as error:
+            raise AssertionError(f"shape={shape} side={name}: {error}") from error
+        expected_outputs[name] = result.clone()
 
     wall_latencies: dict[str, list[float]] = {name: [] for name in functions}
     event_latencies: dict[str, list[float]] = {name: [] for name in functions}
+    memory = {name: [] for name in functions}
     order = tuple(functions)
     for sample in range(samples):
         rotated_order = order[sample % len(order) :] + order[: sample % len(order)]
         for name in rotated_order:
             fn = functions[name]
+            for _ in range(20):
+                result = fn()
             torch.cuda.synchronize(device)
+            torch.cuda.reset_peak_memory_stats(device)
+            allocated_before = torch.cuda.memory_allocated(device)
             start = time.perf_counter()
             for _ in range(calls_per_sample):
                 result = fn()
             torch.cuda.synchronize(device)
             elapsed = (time.perf_counter() - start) * 1000 / calls_per_sample
-            _check_output(result, a_cpu, q_cpu, a, device)
+            torch.testing.assert_close(result, expected_outputs[name], atol=0, rtol=0)
+            memory[name].append(
+                {
+                    "allocated_before": allocated_before,
+                    "peak_allocated": torch.cuda.max_memory_allocated(device),
+                    "peak_reserved": torch.cuda.max_memory_reserved(device),
+                }
+            )
             wall_latencies[name].append(elapsed)
 
             torch.cuda.synchronize(device)
@@ -328,7 +384,7 @@ def benchmark(evidence_dir: Path, samples: int = 7, calls_per_sample: int = 5) -
             end_event.record()
             end_event.synchronize()
             event_elapsed = start_event.elapsed_time(end_event) / calls_per_sample
-            _check_output(result, a_cpu, q_cpu, a, device)
+            torch.testing.assert_close(result, expected_outputs[name], atol=0, rtol=0)
             event_latencies[name].append(event_elapsed)
 
     baseline = wall_latencies["torch_unpack_plus_matmul"]
@@ -351,18 +407,43 @@ def benchmark(evidence_dir: Path, samples: int = 7, calls_per_sample: int = 5) -
         "gpu": gpu_name,
         "target": target,
         "shape_mnk": [m, n, k],
+        "seed": 21,
+        "inputs_sha256": hashlib.sha256(a_cpu.tobytes() + q_cpu.tobytes()).hexdigest(),
+        "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "source_diff_sha256": hashlib.sha256(subprocess.check_output(["git", "diff", "HEAD"], cwd=ROOT)).hexdigest(),
+        "python": platform.python_version(),
+        "compile_or_cache_lookup_seconds": compile_seconds,
+        "memory_bytes": memory,
+        "numerical_error_vs_independent_oracles": errors,
+        "numerical_acceptance": numerical_policy,
+        "passes_original_two_ulp_gate": all(error["max_ulp"] <= 2 for error in errors.values()),
+        "sample_validation": "each final sampled output exactly matches its independently checked warmed output",
+        "counts": {
+            "offered": samples * calls_per_sample * 2 * len(functions),
+            "finished": samples * calls_per_sample * 2 * len(functions),
+            "failed": 0,
+            "rejected": 0,
+            "timed_out": 0,
+        },
+        "baseline_scope": {
+            "torch_unpack_plus_matmul": "same packed input; eager Torch signed decode plus optimized FP16-input FP32-output matmul then FP16 rounding, not a tuned fused low-bit library",
+            "torch_predecoded_cublas": "optimized FP16-input FP32-output matmul then FP16 rounding with weights decoded before timing; extra decoded storage and preprocessing excluded, a compute-only lower-bound control",
+        },
         "plan": plan.__dict__,
         "claim_tested": "the selected fused kernel lowers end-to-end latency versus Torch unpack plus matmul",
         "timing": {
             "wall_clock": "around the public operation, including output allocation and decode; compile excluded after warmup",
-            "cuda_events": "elapsed CUDA stream time around the same warmed operations; excludes host-only work and compile, includes enqueued CUDA work",
+            "cuda_events": "elapsed CUDA stream span around warmed public operations; may include idle gaps while the host enqueues work; compilation excluded",
         },
         "samples_per_side": samples,
         "calls_per_sample": calls_per_sample,
+        "warmup_calls_per_side": 100,
+        "warmup_calls_before_each_sample": 20,
         "wall_clock_latency_ms": {
             name: {
                 "samples": values,
                 "median": float(np.median(values)),
+                "p95": float(np.percentile(values, 95)),
                 "range": [float(min(values)), float(max(values))],
             }
             for name, values in wall_latencies.items()
@@ -371,6 +452,7 @@ def benchmark(evidence_dir: Path, samples: int = 7, calls_per_sample: int = 5) -
             name: {
                 "samples": values,
                 "median": float(np.median(values)),
+                "p95": float(np.percentile(values, 95)),
                 "range": [float(min(values)), float(max(values))],
             }
             for name, values in event_latencies.items()
@@ -396,24 +478,120 @@ def benchmark(evidence_dir: Path, samples: int = 7, calls_per_sample: int = 5) -
     return record
 
 
-def profile(evidence_dir: Path) -> dict[str, object]:
+def sweep(evidence_dir: Path, shapes=BENCHMARK_SHAPES) -> dict[str, object]:
+    results = []
+    for shape in shapes:
+        results.append(benchmark(evidence_dir / ("x".join(map(str, shape))), shape=shape, calls_per_sample=200))
+    record = {"workload_version": 1, "shapes_mnk": shapes, "results": results, "pass": True}
+    (evidence_dir / "sweep-result.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return record
+
+
+def graph_diagnostic(evidence_dir: Path) -> dict[str, object]:
+    device, gpu_name, target = doctor()
+    _, gemm, pack = _load_p21_module()
+    results = []
+    for m, n, k in BENCHMARK_SHAPES + HELD_OUT_SHAPES:
+        a_cpu, q_cpu = _inputs(m, n, k, 21)
+        a = torch.from_numpy(a_cpu.copy()).to(device)
+        packed = pack(torch.from_numpy(q_cpu.copy()).to(device))
+        decoded = torch.from_numpy(q_cpu.copy()).to(device=device, dtype=torch.float16)
+        functions = {
+            "torch_unpack_plus_matmul": lambda a=a, packed=packed, k=k: _torch_unpack_matmul(a, packed, k),
+            "torch_predecoded_cublas": lambda a=a, decoded=decoded: torch.mm(a, decoded.T, out_dtype=torch.float32).to(torch.float16),
+            "tilelang_auto": lambda a=a, packed=packed: gemm(a, packed, "auto")[0],
+            "tilelang_fragment_control": lambda a=a, packed=packed: gemm(a, packed, "fragment")[0],
+            "tilelang_shared_control": lambda a=a, packed=packed: gemm(a, packed, "shared")[0],
+        }
+        graphs, outputs, expected, errors = {}, {}, {}, {}
+        for name, fn in functions.items():
+            for _ in range(100):
+                output = fn()
+            torch.cuda.synchronize(device)
+            errors[name] = _check_output(output, a_cpu, q_cpu, a, device, max_ulp_limit=None)
+            expected[name] = output.clone()
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                outputs[name] = fn()
+            graphs[name] = graph
+        values = {name: [] for name in functions}
+        order = tuple(functions)
+        for repeat in range(7):
+            for name in order[repeat % len(order) :] + order[: repeat % len(order)]:
+                graph = graphs[name]
+                for _ in range(20):
+                    graph.replay()
+                torch.cuda.synchronize(device)
+                if torch.cuda.memory_reserved(device) >= 12 * 1024**3:
+                    raise RuntimeError("graph diagnostic exceeded its 12 GiB device memory bound")
+                start = torch.cuda.Event(enable_timing=True)
+                stop = torch.cuda.Event(enable_timing=True)
+                start.record()
+                for _ in range(200):
+                    graph.replay()
+                stop.record()
+                stop.synchronize()
+                values[name].append(start.elapsed_time(stop) / 200)
+                torch.testing.assert_close(outputs[name], expected[name], atol=0, rtol=0)
+        results.append(
+            {
+                "shape_mnk": [m, n, k],
+                "cuda_graph_ms": {
+                    name: {"samples": samples, "median": float(np.median(samples)), "range": [min(samples), max(samples)]}
+                    for name, samples in values.items()
+                },
+                "numerical_error": errors,
+                "numerical_acceptance": _benchmark_numerical_policy((m, n, k)),
+                "passes_original_two_ulp_gate": all(error["max_ulp"] <= 2 for error in errors.values()),
+                "memory_allocated": torch.cuda.memory_allocated(device),
+                "memory_reserved": torch.cuda.memory_reserved(device),
+                "finished_replays": 7 * 200 * len(functions),
+                "failed": 0,
+            }
+        )
+        del graph, graphs, outputs, expected, functions, output, a, packed, decoded
+        torch.cuda.empty_cache()
+    record = {
+        "purpose": "diagnostic only; graph capture removes the public-operation Python path and host allocation; graph.replay enqueue gaps may remain; not public-call latency",
+        "gpu": gpu_name,
+        "target": target,
+        "seed": 21,
+        "warmup_calls": 100,
+        "warmup_replays_before_sample": 20,
+        "repeats": 7,
+        "replays_per_sample": 200,
+        "results": results,
+        "pass": True,
+    }
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    (evidence_dir / "graph-diagnostic.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return record
+
+
+def profile(evidence_dir: Path, shape: tuple[int, int, int] = (128, 256, 256)) -> dict[str, object]:
     device, gpu_name, target = doctor()
     compile_kernel, gemm, pack = _load_p21_module()
-    m, n, k = 128, 256, 256
+    m, n, k = shape
+    numerical_policy = _benchmark_numerical_policy(shape)
     a_cpu, q_cpu = _inputs(m, n, k, 21)
     a = torch.from_numpy(a_cpu.copy()).to(device)
     packed = pack(torch.from_numpy(q_cpu.copy()).to(device))
     kernel, plan = compile_kernel(m, n, k, device, "auto")
     output = torch.empty((m, n), dtype=torch.float16, device=device)
     kernel(a, packed, output)
+    decoded = torch.from_numpy(q_cpu.copy()).to(device=device, dtype=torch.float16)
     functions = {
         "torch_unpack_plus_matmul": lambda: _torch_unpack_matmul(a, packed, k),
+        "torch_predecoded_cublas": lambda: torch.mm(a, decoded.T, out_dtype=torch.float32).to(torch.float16),
         "tilelang_selected_plan": lambda: gemm(a, packed, "auto")[0],
+        "tilelang_fragment": lambda: gemm(a, packed, "fragment")[0],
+        "tilelang_shared": lambda: gemm(a, packed, "shared")[0],
     }
-    for fn in functions.values():
+    errors = {}
+    for name, fn in functions.items():
         result = fn()
         torch.cuda.synchronize(device)
-        _check_output(result, a_cpu, q_cpu, a, device)
+        errors[name] = _check_output(result, a_cpu, q_cpu, a, device, max_ulp_limit=numerical_policy["fp16_ulp_limit"])
 
     activities = [torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]
     evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -424,8 +602,8 @@ def profile(evidence_dir: Path) -> dict[str, object]:
             with torch.profiler.record_function(name):
                 outputs[name] = fn()
             torch.cuda.synchronize(device)
-    for result in outputs.values():
-        _check_output(result, a_cpu, q_cpu, a, device)
+    for name, result in outputs.items():
+        errors[name] = _check_output(result, a_cpu, q_cpu, a, device, max_ulp_limit=numerical_policy["fp16_ulp_limit"])
     summary = profiler.key_averages().table(sort_by="self_cuda_time_total", row_limit=24)
     profiler.export_chrome_trace(str(trace_path))
     record = {
@@ -438,6 +616,9 @@ def profile(evidence_dir: Path) -> dict[str, object]:
         "trace": str(trace_path),
         "summary": summary,
         "purpose": "diagnostic only; profiler timings are not benchmark results",
+        "numerical_acceptance": numerical_policy,
+        "numerical_error_vs_independent_oracles": errors,
+        "passes_original_two_ulp_gate": all(error["max_ulp"] <= 2 for error in errors.values()),
         "pass": True,
     }
     (evidence_dir / "profile-result.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
@@ -450,8 +631,12 @@ def main() -> None:
     mode.add_argument("--doctor", action="store_true")
     mode.add_argument("--drive", action="store_true")
     mode.add_argument("--benchmark", action="store_true")
+    mode.add_argument("--sweep", action="store_true")
+    mode.add_argument("--held-out", action="store_true")
+    mode.add_argument("--graph-diagnostic", action="store_true")
     mode.add_argument("--profile", action="store_true")
     parser.add_argument("--evidence-dir", type=Path, default=EVIDENCE)
+    parser.add_argument("--shape", nargs=3, type=int, default=(128, 256, 256), metavar=("M", "N", "K"))
     args = parser.parse_args()
     if args.doctor:
         device, gpu_name, target = doctor()
@@ -464,9 +649,15 @@ def main() -> None:
     elif args.drive:
         print(json.dumps(drive(args.evidence_dir), indent=2))
     elif args.benchmark:
-        print(json.dumps(benchmark(args.evidence_dir), indent=2))
+        print(json.dumps(benchmark(args.evidence_dir, shape=tuple(args.shape)), indent=2))
+    elif args.sweep:
+        print(json.dumps(sweep(args.evidence_dir), indent=2))
+    elif args.held_out:
+        print(json.dumps(sweep(args.evidence_dir, HELD_OUT_SHAPES), indent=2))
+    elif args.graph_diagnostic:
+        print(json.dumps(graph_diagnostic(args.evidence_dir), indent=2))
     else:
-        print(json.dumps(profile(args.evidence_dir), indent=2))
+        print(json.dumps(profile(args.evidence_dir, shape=tuple(args.shape)), indent=2))
 
 
 if __name__ == "__main__":
