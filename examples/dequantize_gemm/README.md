@@ -34,3 +34,9 @@ def dequant_matmul(
 ```
 
 **Notes:** Dequantize GEMM with magic layout transformations to get optimal performance can be found at project [BitBLAS](https://github.com/microsoft/BitBLAS), example kernels can be found at `testing/python/kernel/test_tilelang_dequantize_gemm.py`, detailed explanation and examples is coming soon.
+
+## FP16 by signed INT4 GEMM on CUDA
+
+The P21 extension in [`p21_fp16xint4.py`](p21_fp16xint4.py) compiles a TileLang `T.gemm` kernel for FP16 activations and packed signed INT4 weights. `pack_signed_int4` stores the even reduction index in the low nibble. `fp16xint4_gemm` chooses tile sizes, pipeline depth, and whether to convert decoded weights into a swizzled shared-memory tile or keep them in a register fragment.
+
+Run the [P21 guide](P21.md) for the input layout, schedule policy, verification commands, and measured limits. The project-local [verification skill](../../.agents/skills/verify-low-precision-tensor-compiler/SKILL.md) drives the real CUDA kernels and saves generated TIR, CUDA, and result records under `.verification-runs/P21/`.

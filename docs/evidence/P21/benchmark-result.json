@@ -1,0 +1,175 @@
+{
+  "tilelang": "0.1.15",
+  "torch": "2.11.0+cu128",
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "target": "sm_120",
+  "shape_mnk": [
+    128,
+    256,
+    256
+  ],
+  "plan": {
+    "block_m": 64,
+    "block_n": 128,
+    "block_k": 64,
+    "stages": 3,
+    "threads": 128,
+    "placement": "shared",
+    "estimated_shared_bytes": 86016,
+    "decoded_values_per_thread": 64
+  },
+  "claim_tested": "the selected fused kernel lowers end-to-end latency versus Torch unpack plus matmul",
+  "timing": {
+    "wall_clock": "around the public operation, including output allocation and decode; compile excluded after warmup",
+    "cuda_events": "elapsed CUDA stream time around the same warmed operations; excludes host-only work and compile, includes enqueued CUDA work"
+  },
+  "samples_per_side": 7,
+  "calls_per_sample": 5,
+  "wall_clock_latency_ms": {
+    "torch_unpack_plus_matmul": {
+      "samples": [
+        0.17955999937839806,
+        0.41122000257018954,
+        0.1618400012375787,
+        0.4102999984752387,
+        0.46971999981906265,
+        0.4555599996820092,
+        0.18459999992046505
+      ],
+      "median": 0.4102999984752387,
+      "range": [
+        0.1618400012375787,
+        0.46971999981906265
+      ]
+    },
+    "tilelang_auto": {
+      "samples": [
+        0.07878000033088028,
+        0.05525999877136201,
+        0.07579999801237136,
+        0.07947999984025955,
+        0.08887999865692109,
+        0.07409999961964786,
+        0.0668799999402836
+      ],
+      "median": 0.07579999801237136,
+      "range": [
+        0.05525999877136201,
+        0.08887999865692109
+      ]
+    },
+    "tilelang_fragment_control": {
+      "samples": [
+        0.07627999875694513,
+        0.06453999958466738,
+        0.07603999983984977,
+        0.08030000026337802,
+        0.07694000087212771,
+        0.07782000175211579,
+        0.0754999986384064
+      ],
+      "median": 0.07627999875694513,
+      "range": [
+        0.06453999958466738,
+        0.08030000026337802
+      ]
+    },
+    "tilelang_shared_control": {
+      "samples": [
+        0.07808000082150102,
+        0.07499999774154276,
+        0.07821999897714704,
+        0.07360000163316727,
+        0.07557999924756587,
+        0.07351999811362475,
+        0.07467999821528792
+      ],
+      "median": 0.07499999774154276,
+      "range": [
+        0.07351999811362475,
+        0.07821999897714704
+      ]
+    }
+  },
+  "cuda_event_latency_ms": {
+    "torch_unpack_plus_matmul": {
+      "samples": [
+        0.41633920669555663,
+        0.17022720575332642,
+        0.1480512022972107,
+        0.42483201026916506,
+        0.4342144012451172,
+        0.22061440944671631,
+        0.1695039987564087
+      ],
+      "median": 0.22061440944671631,
+      "range": [
+        0.1480512022972107,
+        0.4342144012451172
+      ]
+    },
+    "tilelang_auto": {
+      "samples": [
+        0.052883201837539674,
+        0.06399359703063964,
+        0.07798399925231933,
+        0.09253119826316833,
+        0.05377920269966126,
+        0.05580800175666809,
+        0.08370559811592101
+      ],
+      "median": 0.06399359703063964,
+      "range": [
+        0.052883201837539674,
+        0.09253119826316833
+      ]
+    },
+    "tilelang_fragment_control": {
+      "samples": [
+        0.0806335985660553,
+        0.06306560039520263,
+        0.08133760094642639,
+        0.05809919834136963,
+        0.05379199981689453,
+        0.0781440019607544,
+        0.07925760149955749
+      ],
+      "median": 0.0781440019607544,
+      "range": [
+        0.05379199981689453,
+        0.08133760094642639
+      ]
+    },
+    "tilelang_shared_control": {
+      "samples": [
+        0.08144000172615051,
+        0.08092799782752991,
+        0.07738239765167236,
+        0.052908802032470705,
+        0.05389440059661865,
+        0.07804800271987915,
+        0.05051519870758057
+      ],
+      "median": 0.07738239765167236,
+      "range": [
+        0.05051519870758057,
+        0.08144000172615051
+      ]
+    }
+  },
+  "baseline_over_selected_speedup": 5.41292888171677,
+  "fragment_over_auto_speedup": 1.0063324638147804,
+  "shared_over_auto_speedup": 0.9894459064405512,
+  "cuda_event_baseline_over_selected_speedup": 3.44744505205869,
+  "cuda_event_fragment_over_auto_speedup": 1.2211221995122363,
+  "cuda_event_shared_over_auto_speedup": 1.209220941504855,
+  "result": {
+    "auto_vs_torch_unpack_plus_matmul": "median-only observation: auto median lower; no statistical conclusion",
+    "auto_vs_fragment_control": "median-only observation: auto median lower; no statistical conclusion",
+    "auto_vs_shared_control": "median-only observation: auto median higher; no statistical conclusion",
+    "event_auto_vs_torch_unpack_plus_matmul": "median-only observation: auto median lower; no statistical conclusion",
+    "event_auto_vs_fragment_control": "median-only observation: auto median lower; no statistical conclusion",
+    "event_auto_vs_shared_control": "median-only observation: auto median lower; no statistical conclusion"
+  },
+  "pass": true
+}

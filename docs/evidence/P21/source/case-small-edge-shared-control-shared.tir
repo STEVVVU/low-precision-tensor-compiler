@@ -1,0 +1,54 @@
+# from tvm.script import tirx as T
+
+@T.prim_func
+def main(A_handle: T.handle, B_handle: T.handle, C_handle: T.handle):
+    A = T.match_buffer(A_handle, (3, 35), "float16", strides=(35, 1))
+    B = T.match_buffer(B_handle, (17, 18), "uint8", strides=(18, 1))
+    C = T.match_buffer(C_handle, (3, 17), "float16", strides=(17, 1))
+    # with T.sblock("root"):
+    for bx in T.thread_binding(1, thread="blockIdx.x"):
+        for by in T.thread_binding(1, thread="blockIdx.y"):
+            tx: T.int32 = T.launch_thread_idx(0)
+            ty: T.int32 = T.launch_thread_idx(1)
+            tz: T.int32 = T.launch_thread_idx(2)
+            with T.sblock("tilelang_root"):
+                T.reads()
+                T.writes()
+                B_fp16_shared = T.handle("float16", "shared.dyn")
+                T.sblock_attr({"layout_map": {B_fp16_shared: metadata["tl.Layout"][0]}, "tl.launch_threads": [128, 1, 1]})
+                A_shared = T.sblock_alloc_buffer((16, 48), "float16", scope="shared.dyn")
+                B_packed_shared = T.sblock_alloc_buffer((64, 24), "uint8", scope="shared.dyn")
+                B_packed_fragment = T.sblock_alloc_buffer((64, 24), "uint8", scope="local.fragment")
+                B_fp16_fragment = T.sblock_alloc_buffer((64, 48), "float16", scope="local.fragment")
+                C_fragment = T.sblock_alloc_buffer((16, 64), scope="local.fragment")
+                B_fp16_shared_1 = T.sblock_alloc_buffer((64, 48), "float16", data=B_fp16_shared, scope="shared.dyn")
+                T.fill(T.region(C_fragment[0, 0], 2, 16, 64), 0)
+                for ko in T.serial(1, annotations={"num_stages": 2}):
+                    for i in T.parallel(16):
+                        for j in T.parallel(48):
+                            row: T.int32 = by * 16 + i
+                            col: T.int32 = ko * 48 + j
+                            A_shared[i, j] = T.if_then_else(T.bitwise_and(row < 3, col < 35), A[row, col], T.float16(0.0))
+                    for i in T.parallel(64):
+                        for j in T.parallel(24):
+                            row: T.int32 = bx * 64 + i
+                            col: T.int32 = ko * 24 + j
+                            B_packed_shared[i, j] = T.if_then_else(T.bitwise_and(row < 17, col < 18), B[row, col], T.uint8(0))
+                    T.copy(T.region(B_packed_shared[0, 0], 1, 64, 24), T.region(B_packed_fragment[0, 0], 2, 64, 24))
+                    for i in T.parallel(64):
+                        for j in T.parallel(48):
+                            packed: T.int32 = T.Cast("int32", B_packed_fragment[i, j // 2])
+                            nibble: T.int32 = T.bitwise_and(T.shift_right(packed, j % 2 * 4), 15)
+                            signed: T.int32 = T.if_then_else(nibble >= 8, nibble - 16, nibble)
+                            value: T.float16 = T.if_then_else(ko * 48 + j < 35, T.Cast("float16", signed), T.float16(0.0))
+                            B_fp16_fragment[i, j] = value
+                    T.copy(T.region(B_fp16_fragment[0, 0], 1, 64, 48), T.region(B_fp16_shared_1[0, 0], 2, 64, 48))
+                    T.gemm(T.region(A_shared[0, 0], 1, 16, 48), T.region(B_fp16_shared_1[0, 0], 1, 64, 48), T.region(C_fragment[0, 0], 3, 16, 64), T.bool(False), T.bool(True), 16, 64, 48, 0, T.bool(False), 0, 0, 0)
+                for i in T.parallel(16):
+                    for j in T.parallel(64):
+                        row: T.int32 = by * 16 + i
+                        col: T.int32 = bx * 64 + j
+                        if T.bitwise_and(row < 3, col < 17):
+                            C[row, col] = T.Cast("float16", C_fragment[i, j])
+
+# Metadata omitted. Use show_meta=True in script() method to show it.

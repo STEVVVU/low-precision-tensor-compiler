@@ -1,0 +1,84 @@
+name: P21 CPU syntax, lint, and evidence checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11.13"
+
+      - name: Install pinned CPU lint tool
+        run: python -m pip install --disable-pip-version-check --no-input "ruff==0.16.5"
+
+      - name: Check Python syntax and formatting
+        run: |
+          python -m compileall -q examples/dequantize_gemm/p21_fp16xint4.py examples/dequantize_gemm/p21_quickstart.py tools/p21_verify.py
+          python -m ruff check examples/dequantize_gemm/p21_fp16xint4.py examples/dequantize_gemm/p21_quickstart.py tools/p21_verify.py
+          python -m ruff format --check examples/dequantize_gemm/p21_fp16xint4.py examples/dequantize_gemm/p21_quickstart.py tools/p21_verify.py
+
+      - name: Validate retained GPU evidence without running CUDA
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("docs/evidence/P21")
+          drive = json.loads((root / "drive-result.json").read_text(encoding="utf-8"))
+          bench = json.loads((root / "benchmark-result.json").read_text(encoding="utf-8"))
+
+          assert drive["pass"] is True
+          assert drive["target"] == "sm_120"
+          assert drive["gpu"] == "NVIDIA GeForce RTX 5080 Laptop GPU"
+          assert bench["pass"] is True
+          assert bench["target"] == "sm_120"
+          assert bench["shape_mnk"] == [128, 256, 256]
+
+          artifact_paths = [drive["upstream_fallback"]["cuda_source"]]
+          special = drive["special_values_and_poisoned_odd_tail"]
+          assert special["exact_outputs"] == {
+              "cancellation": 0, "negative": -15, "zero": 0, "positive": 15
+          }
+          assert special["unused_high_nibble"] == "poisoned to 0xF for the odd K=5 tail"
+          artifact_paths.extend((special["cuda_source"], special["tir"]))
+          for case in drive["cases"]:
+              assert case["error_vs_cpu_float64_rounded_fp16"]["max_ulp"] <= 2
+              artifact_paths.extend((case["generated_cuda_source"], case["tir"]))
+          for relative in artifact_paths:
+              assert relative.startswith("source/")
+              assert (root / relative).is_file(), relative
+
+          medium_source = (root / "source/case-medium-shared.cu").read_text(encoding="utf-8")
+          special_source = (root / "source/special-values.cu").read_text(encoding="utf-8")
+          assert "__global__" in medium_source and "uchar* __restrict__ B" in medium_source
+          assert "B_fp16_shared" in medium_source and "- 16" in medium_source
+          assert "< 5" in special_source and "- 16" in special_source
+
+          labels = bench["result"].values()
+          assert all("median-only observation" in value for value in labels)
+          assert all("no statistical conclusion" in value for value in labels)
+          for table_name in ("wall_clock_latency_ms", "cuda_event_latency_ms"):
+              table = bench[table_name]
+              assert set(table) == {
+                  "torch_unpack_plus_matmul", "tilelang_auto",
+                  "tilelang_fragment_control", "tilelang_shared_control",
+              }
+              assert all(len(path["samples"]) == 7 for path in table.values())
+
+          print("Validated retained SM120 GPU evidence; this CPU job did not execute CUDA.")
+          PY
