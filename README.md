@@ -1,5 +1,122 @@
 # Low-precision tensor compiler
 
+## Contents
+
+- [Architecture and execution guide](#architecture-and-execution-guide)
+- [Reproduce on Windows CUDA](#reproduce-on-windows-cuda)
+- [Verification evidence](#verification-evidence)
+- [Research context and attribution](#research-context-and-attribution)
+
+## Architecture and execution guide
+
+This checkout contains upstream TileLang and a focused Python schedule example. P21 adds a signed INT4 GEMM schedule and its verifier. TileLang still owns TIR construction, lowering, layout inference, CUDA code generation, and launch. The exact accumulation option is separate; the default remains the FP32 tensor-core path.
+
+The diagram shows where the example ends and the inherited compiler begins.
+
+```mermaid
+flowchart LR
+Input["FP16 A and packed INT4 B"] --> Example["P21 Python schedule"]
+Example --> TileLang["TileLang frontend and lowering"]
+TileLang --> CUDA["CUDA compiler and runtime"]
+CUDA --> Kernel["GPU kernel"]
+Kernel --> Output["FP16 output"]
+Verify["P21 verifier"] --> Example
+Verify --> Compare["CPU and CUDA references"]
+Output --> Compare
+```
+
+For each output tile, P21 loads [packed INT4](#packed-int4) weights, decodes signed nibbles, and multiplies them by FP16 activations. A compile-time [decode placement](#decode-placement) choice places decoded weights in registers or a swizzled shared-memory tile. The reduction accumulates in FP32, masks an [odd K tail](#odd-k-tail), and stores FP16. Drive checks correctness before profiling or timing. The separate [exact accumulation](#exact-accumulation) option uses integer accumulation and direct FP16 rounding, with a different cost profile.
+
+```mermaid
+flowchart TD
+subgraph Example["P21 schedule"]
+API["Validate SM120 device and input shapes"] --> Policy["Choose tile and decode placement"]
+Policy --> Load["Describe activation and packed-weight tile loads"]
+Load --> Decode["Describe INT4 decode and K-tail masking"]
+Decode --> Reduce["Describe FP32 GEMM reduction"]
+Reduce --> Store["Describe FP16 tile store"]
+end
+subgraph Compiler["Inherited TileLang pipeline"]
+TIR["Build TIR"] --> Layout["Infer layouts and shared staging"]
+Layout --> Lower["Lower GEMM and pipeline"]
+Lower --> Build["Compile and launch CUDA"]
+end
+Store --> TIR
+Build --> Check["Verifier compares output"]
+Check -->|"pass"| Report["Record result or timing"]
+Check -->|"fail"| Stop["Keep failure; skip benchmark"]
+```
+
+| Subsystem | Responsibility and owned invariant | Source |
+| --- | --- | --- |
+| P21 schedule | Validate device and tensor contract; create tiled GEMM and output | [`p21_fp16xint4.py`](examples/dequantize_gemm/p21_fp16xint4.py) |
+| Quickstart | Construct sample input and call the example | [`p21_quickstart.py`](examples/dequantize_gemm/p21_quickstart.py) |
+| Verification driver | Check environment, execute GPU checks, retain evidence, and gate measurement | [`p21_verify.py`](tools/p21_verify.py) |
+| Exact diagnostic | Check finite FP16-by-INT4 inputs against a rounded independent oracle | [`p21_exact.py`](tools/p21_exact.py) |
+| TileLang compiler | Own compiler and runtime behavior inherited upstream | [`tilelang/`](tilelang/) |
+
+### Run one GEMM
+
+1. Create FP16 activation matrix A and packed signed INT4 weight matrix B. Even K occupies the low nibble.
+2. Call the schedule. It checks the supported active device and chooses a tile and decode placement.
+3. TileLang lowers the schedule and compiles the generated kernel through the installed CUDA toolchain.
+4. The GPU decodes weights, masks an odd K tail, reduces, and writes FP16 output.
+5. Drive compares output with independent references. A failed correctness check stops measurement and retains failure evidence.
+
+<a id="packed-int4"></a>
+<details><summary>What is packed INT4?</summary>
+
+Packed INT4 stores two signed four-bit integers in one byte. P21 places even K in the low nibble and odd K in the high nibble. For example, `-1` and `3` share a byte after two's-complement encoding.
+</details>
+
+<a id="decode-placement"></a>
+<details><summary>What is decode placement?</summary>
+
+Decode placement selects where the kernel expands packed nibbles. P21 chooses register fragments or a swizzled shared-memory tile at compile time; this bounded heuristic is not a general search system.
+</details>
+
+<a id="odd-k-tail"></a>
+<details><summary>What is an odd K tail?</summary>
+
+An odd K dimension leaves one unused nibble in the final byte. P21 masks that lane so padding cannot affect the dot product; verification poisons the unused nibble to check the case.
+</details>
+
+<a id="tensor-core-accumulation"></a>
+<details><summary>What is tensor-core accumulation?</summary>
+
+The default path accumulates in FP32 before converting to FP16. Cancellation can still exceed the original two-ULP gate for larger cases, as the evidence below records.
+</details>
+
+<a id="exact-accumulation"></a>
+<details><summary>What is exact accumulation?</summary>
+
+The optional mode sums finite FP16-by-INT4 products as scaled signed integers, then rounds once to FP16. It has a separate measured cost and uses scalar rather than tensor-core accumulation.
+</details>
+
+<a id="two-ulp-gate"></a>
+<details><summary>What is the two-ULP gate?</summary>
+
+The gate limits output error to two representable FP16 steps from the rounded CPU float64 reference. Passing an absolute-relative tolerance does not pass the gate when ULP error is larger.
+</details>
+
+<a id="sm120"></a>
+<details><summary>What is SM120?</summary>
+
+SM120 is the CUDA compute capability targeted by the P21 entry point. The example rejects a different active device and does not dispatch across GPUs.
+</details>
+
+### Design choices and limits
+
+These rationales are inferred from the implementation; behavior and measured limits are documented in the evidence sections below.
+
+| Choice | Current behavior and rationale | Alternative and cost to reconsider |
+| --- | --- | --- |
+| Python schedule over compiler changes | Keeps the extension focused while reusing TileLang lowering. | A native compiler pass could generalize behavior but expands compiler maintenance. |
+| Decode packed input in kernel | Avoids requiring a pre-expanded weight tensor at the call boundary. | Predecode simplifies compute but consumes expanded storage and shifts decode work to callers. |
+| Compile-time register/shared choice | Avoids runtime branching between placement policies. | Runtime choice needs dispatch and evidence across shapes and devices. |
+| FP32 tensor-core default | Uses existing GEMM lowering and preserves current default behavior. | Exact integer mode improves finite rounding but costs tensor-core throughput. |
+| SM120 device restriction | Matches the verified target without implying portability. | Multi-architecture dispatch needs separate builds and verification evidence. |
+
 This repository preserves the upstream TileLang compiler source, examples, history, and MIT license at `v0.1.15` (`a35f8ddf45eba16c21211ec8822d56ce5363036f`). The original upstream landing page is preserved verbatim as [README.upstream.md](README.upstream.md). The P21 addition is a focused Python TileLang schedule example and its real-GPU verification driver; it does not modify TileLang's native compiler or runtime.
 
 ## Implemented path
