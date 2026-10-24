@@ -13,6 +13,8 @@ import torch
 
 
 Placement = Literal["auto", "fragment", "shared"]
+Accumulation = Literal["fp32", "exact"]
+_EXACT_K_LIMIT = ((1 << 63) - 1) // (65504 * (1 << 24) * 8)
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,7 @@ class Schedule:
     placement: Literal["fragment", "shared"]
     estimated_shared_bytes: int
     decoded_values_per_thread: int
+    accumulation: Accumulation = "fp32"
 
 
 def pack_signed_int4(weights: torch.Tensor) -> torch.Tensor:
@@ -47,11 +50,20 @@ def _schedule(
     k: int,
     device: torch.device,
     requested: Placement,
+    accumulation: Accumulation = "fp32",
 ) -> Schedule:
     if min(m, n, k) < 1:
         raise ValueError("M, N, and K must be positive")
     if requested not in ("auto", "fragment", "shared"):
         raise ValueError(f"unsupported decode placement: {requested}")
+    if accumulation not in ("fp32", "exact"):
+        raise ValueError(f"unsupported accumulation: {accumulation}")
+    if accumulation == "exact":
+        if k > _EXACT_K_LIMIT:
+            raise ValueError(f"exact accumulation requires K <= {_EXACT_K_LIMIT}")
+        if requested != "auto":
+            raise ValueError("exact accumulation requires auto placement; it decodes scalar weights")
+        return Schedule(1, 128, 1, 1, 128, "fragment", 0, 1, "exact")
 
     properties = torch.cuda.get_device_properties(device)
     block_m = 16 if m < 64 else 64
@@ -93,6 +105,8 @@ def _schedule(
 
 @lru_cache(maxsize=64)
 def _compile(m: int, n: int, k: int, schedule: Schedule):
+    if schedule.accumulation == "exact":
+        return _compile_exact(m, n, k)
     bm, bn, bk = schedule.block_m, schedule.block_n, schedule.block_k
     stages, threads = schedule.stages, schedule.threads
     decode_to_shared = schedule.placement == "shared"
@@ -147,12 +161,46 @@ def _compile(m: int, n: int, k: int, schedule: Schedule):
     return main
 
 
+def _compile_exact(m: int, n: int, k: int):
+    @tilelang.jit
+    def main(
+        A: T.Tensor((m, k), T.float16),
+        B: T.Tensor((n, (k + 1) // 2), T.uint8),
+        C: T.Tensor((m, n), T.float16),
+    ):
+        with T.Kernel(T.ceildiv(m * n, 128), threads=128) as bx:
+            total = T.alloc_local((1,), T.int64)
+            special = T.alloc_local((1,), T.float32)
+            index = bx * 128 + T.get_thread_binding()
+            row, col = index // n, index % n
+            total[0] = T.int64(0)
+            special[0] = T.float32(0)
+            if index < m * n:
+                for ki in T.serial(k):
+                    code = (T.cast(B[col, ki // 2], T.int32) >> ((ki % 2) * 4)) & 15
+                    weight = T.if_then_else(code >= 8, code - 16, code)
+                    value = T.cast(A[row, ki], T.float32)
+                    if T.isfinite(value):
+                        # FP16 values are integral in units of 2^-24; the compile-time K bound prevents overflow.
+                        total[0] += T.cast(value * 16777216.0, T.int64) * T.cast(weight, T.int64)
+                    else:
+                        special[0] += value * T.cast(weight, T.float32)
+                C[row, col] = T.if_then_else(
+                    T.isfinite(special[0]),
+                    T.call_pure_extern(T.float16, "__double2half", T.cast(total[0], T.float64) * T.float64(2**-24)),
+                    T.cast(special[0], T.float16),
+                )
+
+    return main
+
+
 def compile_fp16xint4(
     m: int,
     n: int,
     k: int,
     device: torch.device,
     placement: Placement = "auto",
+    accumulation: Accumulation = "fp32",
 ):
     """Return a kernel for the current SM120 CUDA device and its hardware-aware plan."""
     device = torch.device(device)
@@ -164,7 +212,7 @@ def compile_fp16xint4(
     device = torch.device("cuda", device_index)
     if torch.cuda.get_device_capability(device) != (12, 0):
         raise ValueError("P21 currently supports the active SM120 CUDA device")
-    plan = _schedule(m, n, k, device, placement)
+    plan = _schedule(m, n, k, device, placement, accumulation)
     return _compile(m, n, k, plan), plan
 
 
@@ -172,6 +220,7 @@ def fp16xint4_gemm(
     A: torch.Tensor,
     packed_B: torch.Tensor,
     placement: Placement = "auto",
+    accumulation: Accumulation = "fp32",
 ) -> tuple[torch.Tensor, Schedule]:
     if A.ndim != 2 or packed_B.ndim != 2:
         raise ValueError("A and packed_B must be rank-two tensors")
@@ -185,7 +234,7 @@ def fp16xint4_gemm(
     n = packed_B.shape[0]
     if packed_B.shape[1] != (k + 1) // 2:
         raise ValueError(f"packed_B must have shape [N, {(k + 1) // 2}]")
-    kernel, plan = compile_fp16xint4(m, n, k, A.device, placement)
+    kernel, plan = compile_fp16xint4(m, n, k, A.device, placement, accumulation)
     output = torch.empty((m, n), dtype=torch.float16, device=A.device)
     kernel(A, packed_B, output)
     return output, plan

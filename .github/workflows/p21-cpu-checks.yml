@@ -34,6 +34,35 @@ jobs:
           python -m ruff check tools/p21_diagnose.py testing/python/tools/test_p21_fp16_ulp.py
           python -m ruff format --check tools/p21_diagnose.py testing/python/tools/test_p21_fp16_ulp.py
           python testing/python/tools/test_p21_fp16_ulp.py
+          python -m compileall -q tools/p21_exact.py
+          python -m ruff check tools/p21_exact.py
+          python -m ruff format --check tools/p21_exact.py
+
+      - name: Validate retained exact-mode GPU evidence without running CUDA
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("docs/evidence/P21/exact-20261024")
+          hashes = json.loads((root / "sha256.json").read_text())
+          for name, digest in hashes.items():
+              assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, name
+          result = json.loads((root / "result.json").read_text())
+          assert result["pass"] and result["accumulation"] == "exact"
+          assert result["target"] == "sm_120"
+          assert len(result["shapes"]) == 9
+          checks = [*result["small_oracles"].values(), *result["shapes"]]
+          assert sum(item["outputs"] for item in checks) == 3174707
+          assert all(item["max_ulp"] == 0 for item in checks)
+          assert result["overflow_bound_rejected"]
+          for name, digest in result["source_sha256"].items():
+              assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name
+          assert all(len(rows) == 5 for rows in result["timing"]["measurements"].values())
+          source = (root / "exact.cu").read_text()
+          assert "__double2half" in source and "int64_t" in source and "isfinite" in source
+          PY
 
       - name: Validate retained GPU evidence without running CUDA
         run: |

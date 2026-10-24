@@ -1,0 +1,258 @@
+{
+  "schema": 1,
+  "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+  "target": "sm_120",
+  "runtime": {
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "torch": "2.11.0+cu128",
+    "cuda_runtime": "12.8"
+  },
+  "accumulation": "exact",
+  "seed": 21,
+  "small_oracles": {
+    "all_finite_fp16_times_all_int4": {
+      "outputs": 1015808,
+      "finite_outputs": 958088,
+      "max_ulp": 0
+    },
+    "rows_beyond_cuda_grid_y_limit": {
+      "outputs": 65536,
+      "finite_outputs": 65536,
+      "max_ulp": 0
+    },
+    "cancellation_midpoint_subnormal_nonfinite_poisoned_tail": {
+      "outputs": 18,
+      "finite_outputs": 8,
+      "max_ulp": 0
+    }
+  },
+  "shapes": [
+    {
+      "shape_mnk": [
+        1,
+        4096,
+        4096
+      ],
+      "outputs": 4096,
+      "finite_outputs": 4096,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 8405504,
+      "input_sha256": "e9044cde8f4991cfc7c3118602319abbac329db4cffff62da3d140c3cec394cd",
+      "rounded_reference_sha256": "e1f9c954652df975a94a508ff66406d265fbe61f6d3e5dcb3f365cc03efa5b16"
+    },
+    {
+      "shape_mnk": [
+        16,
+        1024,
+        1024
+      ],
+      "outputs": 16384,
+      "finite_outputs": 16384,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 589824,
+      "input_sha256": "5f8d8dc9b5bc767a5484314abc6ce681ee6b4143d69a3b635361798bcf86df10",
+      "rounded_reference_sha256": "75a76c307435da197761acd2256660ca55d3134e3ef37d2962350121a5c14f8c"
+    },
+    {
+      "shape_mnk": [
+        128,
+        1024,
+        1024
+      ],
+      "outputs": 131072,
+      "finite_outputs": 131072,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 1048576,
+      "input_sha256": "441f5bd5cce92a9b1c2d1f0e5084cc4963a8cbab1e0ff8b908da37503e3b837a",
+      "rounded_reference_sha256": "747fddcccdfd9785520b762a27266f7e05257fbc269fbcb7e044404494de8438"
+    },
+    {
+      "shape_mnk": [
+        512,
+        1024,
+        1024
+      ],
+      "outputs": 524288,
+      "finite_outputs": 524288,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 2621440,
+      "input_sha256": "21ef5d070297f0970b93fd49611f91fd5202e81047ed73c5e370d3b5dad24482",
+      "rounded_reference_sha256": "0dadd03c6af9a1edf2847d4ecb6394735c534f2f9d5e59666ce2d4c7fde6e3f3"
+    },
+    {
+      "shape_mnk": [
+        256,
+        2048,
+        2048
+      ],
+      "outputs": 524288,
+      "finite_outputs": 524288,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 4194304,
+      "input_sha256": "973689a130aad7e471a51fc32c8a51c50f6a791984546da3fdc425ec56fa6b8b",
+      "rounded_reference_sha256": "98a6e36206fd764b7e7ce75611386410d0811cc430f0078899e80aff2788013f"
+    },
+    {
+      "shape_mnk": [
+        33,
+        257,
+        513
+      ],
+      "outputs": 8481,
+      "finite_outputs": 8481,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 118272,
+      "input_sha256": "c8f6c3cfbe2075e4eea42e7fd560a102660953ebcde8e729d4a0684ef7fa5486",
+      "rounded_reference_sha256": "b4cedfaa2e7acf83ea29dbe9714a0c75459e3ddf727838657ca41ac267a5ac3a"
+    },
+    {
+      "shape_mnk": [
+        256,
+        1536,
+        1536
+      ],
+      "outputs": 393216,
+      "finite_outputs": 393216,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 2752512,
+      "input_sha256": "eaba0478ee960174a0cd686ffba9f61e51216542a39ed57b4f4815b73fc572e6",
+      "rounded_reference_sha256": "eaeb6f65e3a5add63f7f9f08eecc24cf1484baf3b0ed78135c03ceb88e30da77"
+    },
+    {
+      "shape_mnk": [
+        384,
+        768,
+        1024
+      ],
+      "outputs": 294912,
+      "finite_outputs": 294912,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 1769472,
+      "input_sha256": "2e9aa26be3f6d9c955c8225cc16949b49b761bcf31daaf1f0f471c1087e62ef9",
+      "rounded_reference_sha256": "59e890d57080458d8a4f3577b44582f7f2f047f52b71f9b001894e472f8cb118"
+    },
+    {
+      "shape_mnk": [
+        192,
+        1024,
+        2048
+      ],
+      "outputs": 196608,
+      "finite_outputs": 196608,
+      "max_ulp": 0,
+      "torch_peak_allocated_bytes": 2228224,
+      "input_sha256": "f59a3a16371ba44ef871a1da89f1326eb72d843ffb3dd1cb7f0371fb9a598ae3",
+      "rounded_reference_sha256": "387fcb8db423bd0bd32f9d0376b2d06a0f46eee03135de85aba61fccbf348acd"
+    }
+  ],
+  "timing": {
+    "shape_mnk": [
+      128,
+      256,
+      256
+    ],
+    "measurements": {
+      "fp32": [
+        {
+          "median_ms": 0.05756919999839738,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.05756919999839738
+          ]
+        },
+        {
+          "median_ms": 0.05519290000665933,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.05519290000665933
+          ]
+        },
+        {
+          "median_ms": 0.05663089999870863,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.05663089999870863
+          ]
+        },
+        {
+          "median_ms": 0.05744639999466017,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.05744639999466017
+          ]
+        },
+        {
+          "median_ms": 0.05940680000639986,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.05940680000639986
+          ]
+        }
+      ],
+      "exact": [
+        {
+          "median_ms": 0.05699779999849852,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.05699779999849852
+          ]
+        },
+        {
+          "median_ms": 0.0565539999952307,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.0565539999952307
+          ]
+        },
+        {
+          "median_ms": 0.06252199999289587,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.06252199999289587
+          ]
+        },
+        {
+          "median_ms": 0.07168690000253264,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.07168690000253264
+          ]
+        },
+        {
+          "median_ms": 0.05392299999948591,
+          "number_per_run": 1000,
+          "raw_seconds": [
+            0.05392299999948591
+          ]
+        }
+      ]
+    },
+    "scope": "native Torch Timer public-call cost, including allocation, after warm compilation; five alternating samples per mode; exact scalar arithmetic versus FP32 tensor cores, not equal general accuracy"
+  },
+  "exact_plan": {
+    "block_m": 1,
+    "block_n": 128,
+    "block_k": 1,
+    "stages": 1,
+    "threads": 128,
+    "placement": "fragment",
+    "estimated_shared_bytes": 0,
+    "decoded_values_per_thread": 1,
+    "accumulation": "exact"
+  },
+  "overflow_bound_rejected": true,
+  "diagnostic_profile": "diagnostic-profile.json; separately collected after timing, not a timing sample",
+  "elapsed_seconds_including_compile_and_oracles": 22.81854399999429,
+  "parent_process_memory": {
+    "rss_at_end_bytes": 940564480,
+    "peak_working_set_bytes": 1002360832,
+    "scope": "parent process only, including imports/compiler host state; excludes child compiler processes and device memory"
+  },
+  "source_sha256": {
+    "tools/p21_exact.py": "f17202fb966949ca4fd9acb0bdced5dbc8424e563fffc37ac292dbf68f6e0072",
+    "tools/p21_verify.py": "39802f69aa6ab2f154d71bb916f0c9b1a0daf97e300598376e56c124de5a31bd",
+    "examples/dequantize_gemm/p21_fp16xint4.py": "c12532eef6577da9aaf14cea11f24132db7fe51d5e220cdfd70bf9743c919489"
+  },
+  "pass": true
+}

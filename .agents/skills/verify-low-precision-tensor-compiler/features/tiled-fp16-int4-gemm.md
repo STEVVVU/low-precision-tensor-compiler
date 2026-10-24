@@ -7,6 +7,7 @@
 - Choose decoded weights in registers or a swizzled shared-memory tile at compile time.
 - Compare the result with CPU float64 and CUDA float32 references.
 - Check exact signed, cancellation, and zero outputs with a poisoned unused high nibble for an odd K tail.
+- Select exact scaled-int64 accumulation for cancellation-sensitive work, with direct FP64-to-FP16 rounding, bounded K and separate nonfinite handling.
 
 ## How to get to it (user POV)
 
@@ -15,6 +16,8 @@ Run `examples/dequantize_gemm/p21_quickstart.py` by script path from the reposit
 ## Driving it with the verification driver
 
 Run Doctor, then Drive from [the verification skill](../SKILL.md). Drive compiles small odd-tail and medium cases, then checks generated CUDA and TIR for the selected compile-time plan.
+
+After Drive, `tools/p21_exact.py --output <new-directory> --benchmark` drives exact mode with the exhaustive finite-value oracle, odd-tail and IEEE fixtures, all nine frozen shapes, compile-boundary rejection, and a separate small native Torch Timer cost comparison. Check the retained generated source for int64 accumulation and `__double2half`. The 24 October run's 3,174,707 comparisons passed with zero finite ULP error. Parent-process and Torch device-memory scopes are explicit in its receipt. This path uses no decoded matrix or data-dependent scratch, and the default FP32 path remains separate.
 
 For the frozen 256x2048x2048 numerical investigation, run `& $python tools\p21_diagnose.py` with the environment from the verification skill in an exclusive GPU slot. It writes `large-gemm-numerical-diagnostic-expanded.json` by default and reports finite FP16 ULPs, worst coordinates, per-dot references, precision flags, and a CUDA FP64 accumulation control. Doctor, strict Drive and the expanded diagnostic ran successfully in `.verification-runs/P21/numerical-20261022-0907/`. Its execution succeeded, but TileLang failed the unchanged original numerical target on the large case. See [the numerical diagnosis](../../../../docs/evidence/P21/numerical-diagnosis.md). It does not change the Drive or benchmark acceptance gate.
 

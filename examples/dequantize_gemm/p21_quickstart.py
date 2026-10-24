@@ -25,6 +25,10 @@ activations = activations.to(device)
 output, schedule = fp16xint4_gemm(activations, packed_weights)
 reference = activations.float() @ weights.to(device=device, dtype=torch.float32).T
 torch.testing.assert_close(output.float(), reference, atol=0.0625, rtol=0.001)
+exact_output, exact_schedule = fp16xint4_gemm(activations, packed_weights, accumulation="exact")
+exact_reference = (activations.double() @ weights.to(device=device, dtype=torch.float64).T).half()
+torch.testing.assert_close(exact_output, exact_reference, atol=0, rtol=0)
 
 print(f"TileLang {tilelang.__version__} from {tilelang_path}")
 print(f"P21 passed on {torch.cuda.get_device_name(device)}: {tuple(output.shape)}, {schedule}")
+print(f"Exact accumulation passed: {exact_schedule}")
