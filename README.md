@@ -10,6 +10,355 @@
 
 ## Architecture and execution guide
 
+<!-- execution-flow:start -->
+### Execution flow
+
+Start with the primary path, then expand a detailed workflow. Select a numbered node to see its operation, implementation techniques, and source. Solid arrows show the named control, data, or lifecycle handoff; dotted arrows show error paths. Separate entry points are named in each workflow.
+
+<a id="review-walkthrough"></a>
+
+#### Walk through one concrete example
+
+Run the included quickstart with seeded signed weights shaped [17,35] and FP16 activations shaped [3,35] on its supported SM120 CUDA device.
+
+**Trace.** [Create FP16 and INT4 inputs](#flow-step-quickstart-inputs) → [Pack signed weights](#flow-step-pack-int4) → [Validate inputs and dispatch](#flow-step-api-contract) → [Require active SM120 CUDA](#flow-step-device-admission) → [Choose tiles and decode placement](#flow-step-schedule-policy) → [Build and compile TileLang kernel](#flow-step-compile-tilelang) → [Load tiles and decode signed nibbles](#flow-step-fp32-load-decode) → [Accumulate FP32 tiles and store FP16](#flow-step-fp32-gemm-store) → [Compare quickstart outputs](#flow-step-quickstart-check).
+
+**Result and boundary.** The schedule validates the input and active SM120 CUDA device, compiles a TileLang kernel, masks the unused high nibble for odd K, and returns FP16 output for comparison. Other active device architectures are rejected; this path does not establish portable execution or performance.
+
+<details>
+<summary>Implementation decisions to explain</summary>
+
+**Why mask the unused nibble when K is odd?** The final byte contains padding outside the logical reduction, so masking prevents that value from changing the dot product. It adds a tail predicate to the schedule.
+
+[Odd-K tail masking](#technique-odd-k-tail-masking).
+
+**Why is TileLang's compiler pipeline still part of this flow?** The Python example builds the schedule while TileLang owns TIR lowering and CUDA compilation. This keeps the extension localized, but compiler behavior remains inherited.
+
+[TileLang TIR compilation pipeline](#technique-tilelang-compilation-pipeline).
+
+</details>
+
+#### Primary execution flow
+
+The quickstart runs the same packed inputs through default FP32 and then explicit exact accumulation; both require the active SM120 device and installed TileLang 0.1.15.
+
+```mermaid
+flowchart TD
+n1["1. Create FP16 and INT4 inputs"]
+click n1 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-quickstart-inputs" "Open step, techniques, and source" _top
+n2["2. Pack signed weights"]
+click n2 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-pack-int4" "Open step, techniques, and source" _top
+n3["3. Validate inputs and dispatch"]
+click n3 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-api-contract" "Open step, techniques, and source" _top
+n4["4. Require active SM120 CUDA"]
+click n4 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-device-admission" "Open step, techniques, and source" _top
+n5["5. Choose tiles and decode<br/>placement"]
+click n5 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-schedule-policy" "Open step, techniques, and source" _top
+n6["6. Build and compile TileLang<br/>kernel"]
+click n6 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-compile-tilelang" "Open step, techniques, and source" _top
+n7["7. Load tiles and decode signed<br/>nibbles"]
+click n7 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-fp32-load-decode" "Open step, techniques, and source" _top
+n8["8. Accumulate FP32 tiles and<br/>store FP16"]
+click n8 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-fp32-gemm-store" "Open step, techniques, and source" _top
+n9["9. Accumulate exact finite<br/>products"]
+click n9 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-exact-kernel" "Open step, techniques, and source" _top
+n10["10. Compare quickstart outputs"]
+click n10 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-quickstart-check" "Open step, techniques, and source" _top
+n1 -->|"weights are packed"| n2
+n2 -->|"packed weights and activations"| n3
+n3 -->|"compile requested shape"| n4
+n4 -->|"device admitted"| n5
+n5 -->|"accumulation=fp32"| n6
+n6 -->|"compiled default kernel launch"| n7
+n7 -->|"decoded tile per K iteration"| n8
+n8 -->|"default output"| n10
+n10 -->|"call again with accumulation=exact"| n3
+n6 -->|"exact kernel launch"| n9
+n9 -->|"exact output compared"| n10
+```
+
+**Detailed workflows.** [Quickstart default and exact GEMM](#flow-workflow-default-and-exact-api) · [FP32 correctness and benchmark](#flow-workflow-fp32-verification) · [Exact arithmetic diagnostics and optional timing](#flow-workflow-exact-verification) · [Independent diagnostic and measurement commands](#flow-workflow-measurement-modes).
+
+<a id="flow-workflow-default-and-exact-api"></a>
+
+<details>
+<summary>Quickstart default and exact GEMM</summary>
+
+The quickstart runs the same packed inputs through default FP32 and then explicit exact accumulation; both require the active SM120 device and installed TileLang 0.1.15.
+
+```mermaid
+flowchart TD
+n1["1. Create FP16 and INT4 inputs"]
+click n1 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-quickstart-inputs" "Open step, techniques, and source" _top
+n2["2. Pack signed weights"]
+click n2 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-pack-int4" "Open step, techniques, and source" _top
+n3["3. Validate inputs and dispatch"]
+click n3 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-api-contract" "Open step, techniques, and source" _top
+n4["4. Require active SM120 CUDA"]
+click n4 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-device-admission" "Open step, techniques, and source" _top
+n5["5. Choose tiles and decode<br/>placement"]
+click n5 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-schedule-policy" "Open step, techniques, and source" _top
+n6["6. Build and compile TileLang<br/>kernel"]
+click n6 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-compile-tilelang" "Open step, techniques, and source" _top
+n7["7. Load tiles and decode signed<br/>nibbles"]
+click n7 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-fp32-load-decode" "Open step, techniques, and source" _top
+n8["8. Accumulate FP32 tiles and<br/>store FP16"]
+click n8 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-fp32-gemm-store" "Open step, techniques, and source" _top
+n9["9. Accumulate exact finite<br/>products"]
+click n9 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-exact-kernel" "Open step, techniques, and source" _top
+n10["10. Compare quickstart outputs"]
+click n10 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-quickstart-check" "Open step, techniques, and source" _top
+n1 -->|"weights are packed"| n2
+n2 -->|"packed weights and activations"| n3
+n3 -->|"compile requested shape"| n4
+n4 -->|"device admitted"| n5
+n5 -->|"accumulation=fp32"| n6
+n6 -->|"compiled default kernel launch"| n7
+n7 -->|"decoded tile per K iteration"| n8
+n8 -->|"default output"| n10
+n10 -->|"call again with accumulation=exact"| n3
+n6 -->|"exact kernel launch"| n9
+n9 -->|"exact output compared"| n10
+```
+
+</details>
+
+<a id="flow-workflow-fp32-verification"></a>
+
+<details>
+<summary>FP32 correctness and benchmark</summary>
+
+The verifier performs correctness and generated-code checks. Profiling and benchmark commands are separate modes; profiling is diagnostic and benchmark reports distinct host and CUDA event scopes.
+
+```mermaid
+flowchart TD
+n11["11. Run GPU correctness cases"]
+click n11 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-verify-drive" "Open step, techniques, and source" _top
+n4["4. Require active SM120 CUDA"]
+click n4 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-device-admission" "Open step, techniques, and source" _top
+n11 -->|"doctor then GPU cases"| n4
+```
+
+</details>
+
+<a id="flow-workflow-exact-verification"></a>
+
+<details>
+<summary>Exact arithmetic diagnostics and optional timing</summary>
+
+The exact driver exhaustively checks finite FP16 values at K=1, special cases, and configured shapes. Optional exact-versus-FP32 timing follows correctness and uses public-call measurements.
+
+```mermaid
+flowchart TD
+n12["12. Check exact mode and finite<br/>FP16 domain"]
+click n12 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-exact-diagnostic" "Open step, techniques, and source" _top
+n4["4. Require active SM120 CUDA"]
+click n4 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-device-admission" "Open step, techniques, and source" _top
+n12 -->|"doctor then exact cases"| n4
+```
+
+</details>
+
+<a id="flow-workflow-measurement-modes"></a>
+
+<details>
+<summary>Independent diagnostic and measurement commands</summary>
+
+Separate CLI modes drive their own correctness cases and measurements. Optional exact timing follows exact correctness inside tools/p21_exact.py; these are not stages of the public GEMM call.
+
+```mermaid
+flowchart TD
+n11["11. Run GPU correctness cases"]
+click n11 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-verify-drive" "Open step, techniques, and source" _top
+n12["12. Check exact mode and finite<br/>FP16 domain"]
+click n12 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-exact-diagnostic" "Open step, techniques, and source" _top
+n13["13. Collect diagnostic profile"]
+click n13 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-diagnostic-profile" "Open step, techniques, and source" _top
+n14["14. Measure host and CUDA event<br/>scopes"]
+click n14 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-benchmark" "Open step, techniques, and source" _top
+n15["15. Compare exact and FP32 call<br/>costs"]
+click n15 href "https://github.com/STEVVVU/low-precision-tensor-compiler#flow-step-exact-measurement" "Open step, techniques, and source" _top
+```
+
+</details>
+
+#### Steps, techniques, and source
+
+These source traces cover the active scope below. They explain implementation behavior; benchmark results and their limits remain in the measurement sections.
+
+<a id="flow-step-quickstart-inputs"></a>
+
+##### 1. Create FP16 and INT4 inputs
+
+**Component.** p21_quickstart.py module entry point. The quickstart creates seeded [17,35] signed weights and [3,35] FP16 activations, then moves both to the current CUDA device.
+
+This is example input setup, not a distinct kernel mechanism.
+
+**Source.** [`examples/dequantize_gemm/p21_quickstart.py:19`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_quickstart.py#L19). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-pack-int4"></a>
+
+##### 2. Pack signed weights
+
+**Component.** pack_signed_int4. The packer accepts a nonempty rank-two signed integer tensor in [-8,7], pads odd K with zero, then stores even K in the low nibble and odd K in the high nibble.
+
+**Techniques at this step.** [Low-nibble-first packing](#technique-signed-int4-packing).
+
+**Source.** [`examples/dequantize_gemm/p21_fp16xint4.py:33`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_fp16xint4.py#L33). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-api-contract"></a>
+
+##### 3. Validate inputs and dispatch
+
+**Component.** fp16xint4_gemm. The public API validates activation dtype/device, packed-weight shape and device, placement and accumulation options, and dimensions; it allocates FP16 output and invokes the compiled kernel. Invalid inputs raise errors.
+
+**Techniques at this step.** [Active-device and installed-compiler boundary](#technique-device-and-compiler-boundary).
+
+**Source.** [`examples/dequantize_gemm/p21_fp16xint4.py:219`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_fp16xint4.py#L219). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-device-admission"></a>
+
+##### 4. Require active SM120 CUDA
+
+**Component.** compile_fp16xint4. Compilation rejects non-CUDA, non-current, and non-SM120 devices before planning. Doctor also requires TileLang 0.1.15 from the installed wheel and available CUDA.
+
+**Techniques at this step.** [Active-device and installed-compiler boundary](#technique-device-and-compiler-boundary).
+
+**Source.** [`examples/dequantize_gemm/p21_fp16xint4.py:197`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_fp16xint4.py#L197) · [`tools/p21_verify.py:29`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_verify.py#L29). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-schedule-policy"></a>
+
+##### 5. Choose tiles and decode placement
+
+**Component.** _schedule. For FP32 mode the schedule derives block sizes, warp count and stage count from shape and device properties. Auto placement selects fragment or shared decode from a register-value budget and estimated shared bytes; explicit shared placement over the device limit raises ValueError. Exact mode instead checks the int64 K bound and requires auto placement.
+
+**Techniques at this step.** [Compile-time decode placement](#technique-decode-placement-policy) · [Logical resource-bound estimation](#technique-resource-bound-estimation) · [Exact accumulator overflow bound](#technique-exact-accumulator-overflow-bound).
+
+**Source.** [`examples/dequantize_gemm/p21_fp16xint4.py:47`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_fp16xint4.py#L47). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-compile-tilelang"></a>
+
+##### 6. Build and compile TileLang kernel
+
+**Component.** _compile and TileLang JIT. The cached _compile builds a TileLang JIT kernel for the selected schedule. TileLang owns TIR construction, layout inference, lowering, CUDA generation, and launch; P21 does not implement those compiler stages.
+
+**Techniques at this step.** [TileLang TIR compilation pipeline](#technique-tilelang-compilation-pipeline).
+
+**Source.** [`examples/dequantize_gemm/p21_fp16xint4.py:106`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_fp16xint4.py#L106) · [`examples/dequantize_gemm/P21.md:1`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/P21.md#L1). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-fp32-load-decode"></a>
+
+##### 7. Load tiles and decode signed nibbles
+
+**Component.** _compile.main. Each reduction iteration stages bounded activation and packed-weight tiles, extracts the nibble selected by K parity, sign-extends values 8-15 by subtracting 16, and writes zero for lanes beyond logical K.
+
+**Techniques at this step.** [Signed-nibble extension](#technique-signed-nibble-extension) · [Odd-K tail masking](#technique-odd-k-tail-masking) · [Shared-memory tiling and pipelined GEMM](#technique-shared-memory-tiling-and-pipelining).
+
+**Source.** [`examples/dequantize_gemm/p21_fp16xint4.py:131`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_fp16xint4.py#L131). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-fp32-gemm-store"></a>
+
+##### 8. Accumulate FP32 tiles and store FP16
+
+**Component.** _compile.main. The fragment branch feeds decoded values directly to T.gemm; the shared branch copies them to a swizzled shared tile first. Both accumulate in FP32 and cast each in-bounds output once to FP16. This path is the default and is not claimed bitwise equal to an exact result.
+
+**Techniques at this step.** [Shared-memory tiling and pipelined GEMM](#technique-shared-memory-tiling-and-pipelining) · [Compile-time decode placement](#technique-decode-placement-policy).
+
+**Source.** [`examples/dequantize_gemm/p21_fp16xint4.py:150`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_fp16xint4.py#L150). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-exact-kernel"></a>
+
+##### 9. Accumulate exact finite products
+
+**Component.** _compile_exact.main. The scalar kernel converts each finite FP16 value to units of 2^-24 and accumulates weighted products in int64 under the compile-time K bound. Nonfinite products take a separate FP32 accumulator; finite totals convert through double and __double2half for direct FP16 rounding.
+
+**Techniques at this step.** [Scaled int64 accumulation with direct FP16 rounding](#technique-exact-scaled-integer-accumulation) · [Exact accumulator overflow bound](#technique-exact-accumulator-overflow-bound).
+
+**Source.** [`examples/dequantize_gemm/p21_fp16xint4.py:164`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_fp16xint4.py#L164). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-quickstart-check"></a>
+
+##### 10. Compare quickstart outputs
+
+**Component.** p21_quickstart.py module entry point. The quickstart checks the default result against a float32 reference with mixed tolerance, then checks exact-mode output against the rounded float64 reference with zero tolerance.
+
+**Techniques at this step.** [Independent oracles and FP16 ULP gate](#technique-independent-oracle-and-ulp-gate).
+
+**Source.** [`examples/dequantize_gemm/p21_quickstart.py:25`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/examples/dequantize_gemm/p21_quickstart.py#L25). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-verify-drive"></a>
+
+##### 11. Run GPU correctness cases
+
+**Component.** tools/p21_verify.py drive and _verify_case. Drive generates cases, packs inputs, runs the selected kernel and compares results with CPU float64-rounded-FP16 and a CUDA reference. It captures TIR and generated CUDA; cancellation and poisoned odd-tail cases exercise sign and masking behavior. Numerical policy uses mixed tolerance and the configured ULP gate; failures raise and prevent later measurement commands from being a successful drive.
+
+**Techniques at this step.** [Independent oracles and FP16 ULP gate](#technique-independent-oracle-and-ulp-gate) · [TileLang TIR compilation pipeline](#technique-tilelang-compilation-pipeline) · [Odd-K tail masking](#technique-odd-k-tail-masking).
+
+**Source.** [`tools/p21_verify.py:220`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_verify.py#L220) · [`tools/p21_verify.py:139`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_verify.py#L139) · [`tools/p21_verify.py:186`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_verify.py#L186). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-exact-diagnostic"></a>
+
+##### 12. Check exact mode and finite FP16 domain
+
+**Component.** tools/p21_exact.py drive. This separate command checks all finite FP16 values against all INT4 values at K=1, plus overflow-grid, midpoint, subnormal, nonfinite, and poisoned-tail cases. It compares outputs exactly with rounded float64 references and rejects invalid mode, placement, and unsafe K. Its assertions are verification behavior, not production fallback logic.
+
+**Techniques at this step.** [Exhaustive finite-FP16 check](#technique-exhaustive-finite-fp16-check) · [Independent oracles and FP16 ULP gate](#technique-independent-oracle-and-ulp-gate) · [Exact accumulator overflow bound](#technique-exact-accumulator-overflow-bound).
+
+**Source.** [`tools/p21_exact.py:30`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_exact.py#L30). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-diagnostic-profile"></a>
+
+##### 13. Collect diagnostic profile
+
+**Component.** tools/p21_verify.py profile and graph_diagnostic. The profile command checks candidate outputs, captures a profiler trace, and labels profiler timings diagnostic. Graph diagnostics separately capture/replay CUDA graphs, check output stability, and report graph replay timing; neither path is public-call latency evidence.
+
+**Techniques at this step.** [Separate host and device measurement scopes](#technique-measurement-scope-separation).
+
+**Source.** [`tools/p21_verify.py:440`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_verify.py#L440) · [`tools/p21_verify.py:378`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_verify.py#L378). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-benchmark"></a>
+
+##### 14. Measure host and CUDA event scopes
+
+**Component.** tools/p21_verify.py benchmark. Benchmark first checks every candidate against its numerical policy, then records host wall-clock and CUDA event timings separately for unpack-plus-matmul, predecoded cuBLAS, and TileLang placement variants. Expanded diagnostic shapes may omit the two-ULP limit; the measurement is not a universal performance or accuracy guarantee.
+
+**Techniques at this step.** [Separate host and device measurement scopes](#technique-measurement-scope-separation) · [Independent oracles and FP16 ULP gate](#technique-independent-oracle-and-ulp-gate).
+
+**Source.** [`tools/p21_verify.py:305`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_verify.py#L305). [Back to execution flow](#execution-flow).
+
+<a id="flow-step-exact-measurement"></a>
+
+##### 15. Compare exact and FP32 call costs
+
+**Component.** tools/p21_exact.py drive benchmark option. The optional exact benchmark checks both modes against the float64-rounded reference, then alternates Torch Timer public-call measurements including allocation after warm compilation. It collects profiler output afterward as a separate diagnostic.
+
+**Techniques at this step.** [Separate host and device measurement scopes](#technique-measurement-scope-separation) · [Independent oracles and FP16 ULP gate](#technique-independent-oracle-and-ulp-gate).
+
+**Source.** [`tools/p21_exact.py:119`](https://github.com/STEVVVU/low-precision-tensor-compiler/blob/main/tools/p21_exact.py#L119). [Back to execution flow](#execution-flow).
+
+<details>
+<summary>Scope and subsystem coverage</summary>
+
+P21 signed FP16 by packed INT4 GEMM: packer and quickstart, SM120 schedule and TileLang compilation, default FP32 path, opt-in exact scalar path, verifier/oracles, and separate diagnostics and measurements.
+
+- **Signed INT4 representation and tiled decode.** Packing, signed nibble decode, and logical odd-K zeroing are covered in both kernels and poisoned-tail diagnostics. [Step 2](#flow-step-pack-int4), [Step 7](#flow-step-fp32-load-decode), [Step 11](#flow-step-verify-drive), [Step 12](#flow-step-exact-diagnostic).
+- **FP32 tiled schedule and resource policy.** Shape-derived tiles, stage count, placement choice, resource estimate, and FP32 GEMM are represented. [Step 5](#flow-step-schedule-policy), [Step 7](#flow-step-fp32-load-decode), [Step 8](#flow-step-fp32-gemm-store).
+- **Inherited TileLang compile pipeline.** The flow attributes TIR and CUDA compiler stages to inherited TileLang and notes generated-code capture in verification. [Step 6](#flow-step-compile-tilelang), [Step 11](#flow-step-verify-drive).
+- **Exact scalar accumulation path.** The exact mode bound, scaled int64 sum, nonfinite branch, and direct half conversion are linked to validation. [Step 5](#flow-step-schedule-policy), [Step 9](#flow-step-exact-kernel), [Step 12](#flow-step-exact-diagnostic).
+- **Correctness and numerical diagnostics.** Quickstart tolerances, independent references, ULP checks, and exhaustive finite-FP16 assertions are separate from measurements. [Step 10](#flow-step-quickstart-check), [Step 11](#flow-step-verify-drive), [Step 12](#flow-step-exact-diagnostic), [Step 14](#flow-step-benchmark), [Step 15](#flow-step-exact-measurement).
+- **Measurement and environment boundary.** SM120 and installed-wheel admission precede CUDA work; profiler, graph, host timer, and CUDA event scopes are identified separately. [Step 4](#flow-step-device-admission), [Step 13](#flow-step-diagnostic-profile), [Step 14](#flow-step-benchmark), [Step 15](#flow-step-exact-measurement).
+
+Outside this flow audit:
+
+- `unrelated upstream examples, native compiler edits, and inactive device backends`. The active P21 paths call the installed TileLang wheel from a Python schedule and do not route through these unrelated paths.
+
+</details>
+
+<!-- execution-flow:end -->
+
+<details>
+<summary>Subsystem technique index</summary>
+
 ### Subsystem map
 
 Select a subsystem in the diagram to open its techniques, tradeoffs, and code references. The numbered links provide the same navigation. This map groups components; the execution diagrams show their runtime flow.
@@ -41,6 +390,8 @@ click s6 href "https://github.com/STEVVVU/low-precision-tensor-compiler#subsyste
 This checkout contains upstream TileLang and a focused Python schedule example. P21 adds a signed INT4 GEMM schedule and its verifier. TileLang still owns TIR construction, lowering, layout inference, CUDA code generation, and launch. The exact accumulation option is separate; the default remains the FP32 tensor-core path.
 
 The diagram shows where the example ends and the inherited compiler begins.
+
+</details>
 
 <details>
 <summary>Expand flow diagram 1</summary>
