@@ -3,6 +3,7 @@
 ## Contents
 
 - [Architecture and execution guide](#architecture-and-execution-guide)
+- [Implementation techniques](#implementation-techniques)
 - [Reproduce on Windows CUDA](#reproduce-on-windows-cuda)
 - [Verification evidence](#verification-evidence)
 - [Research context and attribution](#research-context-and-attribution)
@@ -133,6 +134,250 @@ $python = (Resolve-Path .venv\Scripts\python.exe).Path
 Run the example by script path from the repository root. It imports the installed TileLang wheel and the P21 module beside the script; importing `tilelang` from a Python `-c` command at the checkout root instead resolves the unbuilt development tree.
 
 For the exact input contract, resource heuristic, validation, and benchmark limitations, see the [P21 guide](examples/dequantize_gemm/P21.md).
+
+## Implementation techniques
+
+This section covers the active P21 Python example, its quickstart and verification paths, and the TileLang compiler mechanisms those paths directly invoke. Upstream examples unrelated to P21 are outside this scope. Rationale is inferred from current code; the entry-point contract and limitations are stated in the [P21 guide](examples/dequantize_gemm/P21.md).
+
+| Active subsystem | Technique cards | Source |
+| --- | --- | --- |
+| Signed INT4 data representation | [Low-nibble-first packing](#technique-signed-int4-packing), [signed-nibble extension](#technique-signed-nibble-extension), [poisoned-tail masking](#technique-odd-k-tail-masking) | [schedule](examples/dequantize_gemm/p21_fp16xint4.py#L33), [verifier](tools/p21_verify.py#L186) |
+| Tiled FP32 tensor-core schedule | [shared-memory tiling and pipelining](#technique-shared-memory-tiling-and-pipelining), [compile-time decode placement](#technique-decode-placement-policy), [bounded resource estimate](#technique-resource-bound-estimation) | [schedule](examples/dequantize_gemm/p21_fp16xint4.py#L47) |
+| TileLang compiler pipeline | [TIR lowering, layout inference, and CUDA generation](#technique-tilelang-compilation-pipeline) | [P21 guide](examples/dequantize_gemm/P21.md), [quickstart](examples/dequantize_gemm/p21_quickstart.py#L1) |
+| Opt-in exact arithmetic | [scaled int64 accumulation and direct FP16 rounding](#technique-exact-scaled-integer-accumulation), [K overflow bound](#technique-exact-accumulator-overflow-bound) | [schedule](examples/dequantize_gemm/p21_fp16xint4.py#L164), [exact verifier](tools/p21_exact.py#L30) |
+| Verification and measurement | [independent numerical oracles and ULP gate](#technique-independent-oracle-and-ulp-gate), [exhaustive finite-value check](#technique-exhaustive-finite-fp16-check), [separated host and device metrics](#technique-measurement-scope-separation) | [driver](tools/p21_verify.py#L29), [exact verifier](tools/p21_exact.py#L19) |
+| Quickstart and device boundary | [active-device validation and installed-wheel loading](#technique-device-and-compiler-boundary) | [quickstart](examples/dequantize_gemm/p21_quickstart.py#L1), [schedule](examples/dequantize_gemm/p21_fp16xint4.py#L197) |
+
+### Signed INT4 data representation
+
+<a id="technique-signed-int4-packing"></a>
+
+<details>
+<summary>Low-nibble-first packing</summary>
+
+**Mechanism.** `pack_signed_int4` validates a nonempty rank-two signed integer tensor in `[-8,7]`, pads odd K with zero, masks each value to four-bit two's-complement, then combines even K in the low nibble and odd K in the high nibble.
+
+**Example.** `[-8, -1, 0, 7]` becomes bytes `[0xF8, 0x70]`; a fifth value gets a zero partner in the final byte.
+
+**Why here.** This halves the stored weight width while keeping the public input a simple integer tensor.
+
+**Tradeoffs.** Callers pay packing work and the kernel must decode nibbles. The returned representation is byte-oriented and assumes contiguous packing order.
+
+**Code and ownership.** [pack_signed_int4](examples/dequantize_gemm/p21_fp16xint4.py#L33), P21 extension.
+
+</details>
+
+<a id="technique-signed-nibble-extension"></a>
+
+<details>
+<summary>Signed-nibble extension</summary>
+
+**Mechanism.** The tiled kernel loads an unsigned byte, selects a nibble by K parity, masks four bits, and maps codes 8–15 to -8–-1 by subtracting 16 before converting to FP16.
+
+**Example.** A nibble `0xF` becomes `15 - 16 = -1`.
+
+**Why here.** This recovers the signed values represented by the packer without expanding the entire weight matrix on the host.
+
+**Tradeoffs.** Decode instructions are repeated as tiles are consumed; predecoded weights avoid that work but need expanded storage and a different input path.
+
+**Code and ownership.** `_compile.main` [decode loop](examples/dequantize_gemm/p21_fp16xint4.py#L145), P21 extension using TileLang TIR operations.
+
+</details>
+
+<a id="technique-odd-k-tail-masking"></a>
+
+<details>
+<summary>Odd-K tail masking</summary>
+
+**Mechanism.** The packer zero-pads odd K, while the kernel independently checks the logical K index before writing each decoded value into the reduction tile. Out-of-range lanes become zero, so the unused high nibble cannot contribute.
+
+**Example.** For K=5, verification overwrites the unused high nibble of the final byte with `0xF`; the result must still match the five-element dot product.
+
+**Why here.** Tile widths are rounded for block scheduling and packed bytes always contain two lanes, so the final logical lane needs an explicit validity condition.
+
+**Tradeoffs.** Mask predicates add tail handling; without them poisoned padding can change the answer.
+
+**Code and ownership.** `_compile.main` [K guard](examples/dequantize_gemm/p21_fp16xint4.py#L147), `_verify_signed_cancellation_and_poisoned_tail` [poison fixture](tools/p21_verify.py#L186), P21 extension.
+
+</details>
+
+### Tiled FP32 tensor-core schedule
+
+<a id="technique-shared-memory-tiling-and-pipelining"></a>
+
+<details>
+<summary>Shared-memory tiling and pipelined GEMM</summary>
+
+**Mechanism.** A CUDA block owns an M-by-N output tile. Each K iteration stages bounded activation and packed-weight tiles, decodes the weights, and calls `T.gemm` into an FP32 accumulator. `T.Pipelined` requests two or three stages according to K length; the result is cast to FP16 once at the store.
+
+**Example.** A block reads `A[by*BM:..., ko*BK:...]` and the packed B rows for `bx`, then accumulates the corresponding partial product.
+
+**Why here.** The output decomposition lets TileLang lower the contraction through its GEMM path while staging only a slice of inputs at a time.
+
+**Tradeoffs.** Tile and stage choices affect shared storage and occupancy; FP32 accumulation can still exceed the two-ULP gate on cancellation-heavy larger cases. Pipelining is a request to the compiler, not a measured overlap guarantee.
+
+**Code and ownership.** `_compile.main` [tile and reduction](examples/dequantize_gemm/p21_fp16xint4.py#L115), P21 schedule; `T.Pipelined` and `T.gemm` are inherited TileLang mechanisms.
+
+</details>
+
+<a id="technique-decode-placement-policy"></a>
+
+<details>
+<summary>Compile-time decode placement</summary>
+
+**Mechanism.** The schedule selects either a decoded register fragment or a decoded swizzled shared-memory tile. The branch is resolved while building the TileLang kernel; both paths share packed loads and FP32 GEMM, but the shared path copies decoded values before the contraction.
+
+**Example.** `placement="fragment"` calls GEMM with `B_fp16_fragment`; `placement="shared"` copies it into `B_fp16_shared` first.
+
+**Why here.** A single API can compare two storage locations for decoded values without a runtime branch inside each kernel invocation.
+
+**Tradeoffs.** Fragment use can grow per-thread register demand; shared placement consumes staged shared memory and copy work. The heuristic is bounded and does not search all layouts or guarantee a faster choice.
+
+**Code and ownership.** `_schedule` and `_compile.main` [placement branch](examples/dequantize_gemm/p21_fp16xint4.py#L47), P21 extension.
+
+</details>
+
+<a id="technique-resource-bound-estimation"></a>
+
+<details>
+<summary>Logical resource-bound estimation</summary>
+
+**Mechanism.** The planner estimates decoded values per thread against one warp's width, and estimates staged logical bytes against the device shared-memory limit. Auto mode may reduce stages to two before falling back from shared to fragment placement; forced shared placement rejects estimates above the limit.
+
+**Example.** Auto chooses shared when decoded values per thread exceed the warp-size threshold, then checks the staged-byte estimate against 85% of the reported block limit.
+
+**Why here.** This provides a deterministic device-aware choice with no tuning database or benchmark search.
+
+**Tradeoffs.** The estimate omits padding and compiler lifetime details, as its source comment says. It cannot prove launch feasibility or actual register/shared use; inspect generated code and compiler resource metadata for that.
+
+**Code and ownership.** `_schedule` [resource heuristic](examples/dequantize_gemm/p21_fp16xint4.py#L47), P21 extension.
+
+</details>
+
+<a id="technique-tilelang-compilation-pipeline"></a>
+
+<details>
+<summary>TileLang TIR compilation pipeline</summary>
+
+**Mechanism.** The Python decorator turns the schedule body into TileLang's tensor IR program. The inherited toolchain performs layout inference and lowering, generates CUDA, and launches the compiled kernel; P21 records TIR and generated CUDA for selected cases to inspect the actual lowered path.
+
+**Example.** `kernel.get_kernel_source()` is checked for packed-byte loads, signed nibble operations, and shared decode when selected; `kernel.get_tir(...).script()` is saved with it.
+
+**Why here.** The coursework change supplies a schedule in Python while reusing the installed TileLang compiler instead of modifying its native passes.
+
+**Tradeoffs.** Generated code and resource use are compiler-version and target dependent. P21 pins its documented consumer to TileLang 0.1.15; this is not a promise that another version emits identical code.
+
+**Code and ownership.** [JIT schedule](examples/dequantize_gemm/p21_fp16xint4.py#L106), [code evidence checks](tools/p21_verify.py#L139); compiler passes are inherited TileLang.
+
+</details>
+
+### Opt-in exact arithmetic
+
+<a id="technique-exact-scaled-integer-accumulation"></a>
+
+<details>
+<summary>Scaled int64 accumulation with direct FP16 rounding</summary>
+
+**Mechanism.** Exact mode represents each finite FP16 activation as an integer in units of 2^-24, multiplies that integer by the decoded signed INT4 value, and sums in int64. It converts the final sum back to FP64 scale and calls CUDA `__double2half` for direct final rounding. Nonfinite activation products use a separate FP32 accumulator to retain IEEE special-value behavior.
+
+**Example.** For finite `a`, accumulate `int64(a * 2^24) * weight`; only after reduction compute `double(total) * 2^-24` and round to half.
+
+**Why here.** It avoids intermediate FP32 summation error for finite values where exact FP16 rounding is required.
+
+**Tradeoffs.** This scalar path performs work per output and K element and does not use tensor cores. NaN payload identity and negative-zero payload identity are not promised.
+
+**Code and ownership.** `_compile_exact.main` [integer and special accumulation](examples/dequantize_gemm/p21_fp16xint4.py#L164), P21 extension.
+
+</details>
+
+<a id="technique-exact-accumulator-overflow-bound"></a>
+
+<details>
+<summary>Exact accumulator overflow bound</summary>
+
+**Mechanism.** Before compiling exact mode, `_schedule` bounds K using the largest finite FP16 magnitude, the 2^24 scale, maximum INT4 magnitude 8, and signed int64 capacity. It rejects larger reductions and rejects forced fragment/shared placement because exact mode uses scalar decoding.
+
+**Example.** The maximum accepted K is 1,049,088; an attempted K=1,049,089 is expected to raise before launch.
+
+**Why here.** This makes the integer accumulation's representable range an explicit input constraint rather than relying on overflow behavior.
+
+**Tradeoffs.** The bound is conservative for typical inputs because it covers worst-case values at every reduction step. Exact mode is therefore constrained by the format's maximum, not observed data.
+
+**Code and ownership.** `_EXACT_K_LIMIT` and `_schedule` [guard](examples/dequantize_gemm/p21_fp16xint4.py#L26), rejection check in [exact verifier](tools/p21_exact.py#L77), P21 extension.
+
+</details>
+
+### Verification and measurement
+
+<a id="technique-independent-oracle-and-ulp-gate"></a>
+
+<details>
+<summary>Independent oracles and FP16 ULP gate</summary>
+
+**Mechanism.** The driver computes a CPU float64 matrix product and rounds it to FP16, then separately compares with a CUDA float32 reference. It checks absolute-relative tolerance and maps ordered FP16 bit patterns to integer positions to measure representable-step distance. The original two-ULP condition is a separate hard gate for strict cases.
+
+**Example.** A result can meet ATOL/RTOL and still fail when its maximum distance from the rounded CPU reference exceeds two FP16 ULP.
+
+**Why here.** Different accumulation paths can disagree near cancellation and rounding boundaries; two independent references expose distinct errors.
+
+**Tradeoffs.** CPU float64 reference construction costs host memory and compute. Expanded diagnostic shapes intentionally omit the ULP rejection and are not evidence that the default quality gate passes.
+
+**Code and ownership.** `_check_output` and `_fp16_ulp_distances` [comparisons](tools/p21_verify.py#L59), P21 verification extension; Torch/NumPy arithmetic is dependency-provided.
+
+</details>
+
+<a id="technique-exhaustive-finite-fp16-check"></a>
+
+<details>
+<summary>Exhaustive finite-FP16 check</summary>
+
+**Mechanism.** The exact diagnostic enumerates all 65,536 half encodings, filters to finite values, pairs each with all sixteen signed INT4 values, and compares GPU output numerically with a CPU float64 product rounded to FP16, then reports finite-value ULP distances. Numeric equality does not distinguish positive and negative zero. Separate fixtures cover cancellation, midpoint rounding, subnormals, nonfinite arithmetic, and an odd tail whose unused nibble is poisoned.
+
+**Example.** The Cartesian check covers every finite half input against weights -8 through 7, not every possible matrix reduction.
+
+**Why here.** The scalar exact path has a compact input domain for individual products, making exhaustive finite-value validation practical.
+
+**Tradeoffs.** This exhausts scalar value pairs and targeted reductions, not all shapes, concurrent execution, or devices. Results apply to the tested SM120 setup.
+
+**Code and ownership.** `drive` [small oracles](tools/p21_exact.py#L30), P21 verification extension; NumPy supplies the independent host arithmetic.
+
+</details>
+
+<a id="technique-measurement-scope-separation"></a>
+
+<details>
+<summary>Separate host and device measurement scopes</summary>
+
+**Mechanism.** The fast-path benchmark warms compiled paths, then reports host wall time for the public call (including output allocation) and CUDA event stream time separately. The profiler is a diagnostic trace, not a benchmark sample. Exact mode uses Torch Timer for the public call and reports Torch allocation separately from parent-process RSS/working set.
+
+**Example.** The exact timing report's parent RSS excludes child compiler processes and device allocations; Torch's peak allocation covers only Torch-accounted device memory.
+
+**Why here.** These scopes distinguish Python/allocation overhead from queued GPU work and avoid treating unlike memory counters as equivalent.
+
+**Tradeoffs.** CUDA event intervals may include host enqueue gaps and do not isolate kernel execution. The exact scalar timing is not a tensor-core speed claim.
+
+**Code and ownership.** `benchmark` and `profile` [fast driver](tools/p21_verify.py#L305), `drive` [exact measurements](tools/p21_exact.py#L30), P21 extension using Torch profiler/Timer.
+
+</details>
+
+### Quickstart and device boundary
+
+<a id="technique-device-and-compiler-boundary"></a>
+
+<details>
+<summary>Active-device and installed-compiler boundary</summary>
+
+**Mechanism.** The public API requires rank-two contiguous CUDA tensors on the same active device, checks dtype and packed width, and rejects a device other than the current SM120 GPU. Doctor also verifies TileLang 0.1.15 came from the installed wheel rather than the unbuilt checkout. The quickstart imports its adjacent example module and compares outputs with CPU/GPU references.
+
+**Example.** Invoking the quickstart by repository-relative script path keeps the checkout root from shadowing the installed TileLang package.
+
+**Why here.** The implementation is verified for one local CUDA/compiler setup and needs a reproducible consumer entry point.
+
+**Tradeoffs.** There is no device dispatch or portability claim. A different architecture or compiler install is rejected or unverified and needs its own validation.
+
+**Code and ownership.** `compile_fp16xint4` [device check](examples/dequantize_gemm/p21_fp16xint4.py#L197), [quickstart import and version guard](examples/dequantize_gemm/p21_quickstart.py#L1), `doctor` [environment check](tools/p21_verify.py#L29), P21 extension.
+
+</details>
 
 ## Reproduce on Windows CUDA
 
