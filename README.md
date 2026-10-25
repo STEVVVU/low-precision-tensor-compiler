@@ -10,9 +10,40 @@
 
 ## Architecture and execution guide
 
+### Subsystem map
+
+Select a subsystem in the diagram to open its techniques, tradeoffs, and code references. The numbered links provide the same navigation. This map groups components; the execution diagrams show their runtime flow.
+
+```mermaid
+flowchart LR
+system["Low-precision tensor<br/>compiler"]
+system --> s1["1. Signed INT4 representation and<br/>tiled decode"]
+click s1 href "https://github.com/STEVVVU/low-precision-tensor-compiler#subsystem-signed-int4-representation-and-tiled-decode" "Explore Signed INT4 representation and tiled decode" _top
+system --> s2["2. FP32 tiled schedule and<br/>resource policy"]
+click s2 href "https://github.com/STEVVVU/low-precision-tensor-compiler#subsystem-fp32-tiled-schedule-and-resource-policy" "Explore FP32 tiled schedule and resource policy" _top
+system --> s3["3. Inherited TileLang compile<br/>pipeline"]
+click s3 href "https://github.com/STEVVVU/low-precision-tensor-compiler#subsystem-inherited-tilelang-compile-pipeline" "Explore Inherited TileLang compile pipeline" _top
+system --> s4["4. Exact scalar accumulation path"]
+click s4 href "https://github.com/STEVVVU/low-precision-tensor-compiler#subsystem-exact-scalar-accumulation-path" "Explore Exact scalar accumulation path" _top
+system --> s5["5. Correctness and numerical<br/>diagnostics"]
+click s5 href "https://github.com/STEVVVU/low-precision-tensor-compiler#subsystem-correctness-and-numerical-diagnostics" "Explore Correctness and numerical diagnostics" _top
+system --> s6["6. Measurement and environment<br/>boundary"]
+click s6 href "https://github.com/STEVVVU/low-precision-tensor-compiler#subsystem-measurement-and-environment-boundary" "Explore Measurement and environment boundary" _top
+```
+
+1. [Signed INT4 representation and tiled decode](#subsystem-signed-int4-representation-and-tiled-decode)
+2. [FP32 tiled schedule and resource policy](#subsystem-fp32-tiled-schedule-and-resource-policy)
+3. [Inherited TileLang compile pipeline](#subsystem-inherited-tilelang-compile-pipeline)
+4. [Exact scalar accumulation path](#subsystem-exact-scalar-accumulation-path)
+5. [Correctness and numerical diagnostics](#subsystem-correctness-and-numerical-diagnostics)
+6. [Measurement and environment boundary](#subsystem-measurement-and-environment-boundary)
+
 This checkout contains upstream TileLang and a focused Python schedule example. P21 adds a signed INT4 GEMM schedule and its verifier. TileLang still owns TIR construction, lowering, layout inference, CUDA code generation, and launch. The exact accumulation option is separate; the default remains the FP32 tensor-core path.
 
 The diagram shows where the example ends and the inherited compiler begins.
+
+<details>
+<summary>Expand flow diagram 1</summary>
 
 ```mermaid
 flowchart LR
@@ -26,7 +57,12 @@ Verify --> Compare["CPU and CUDA references"]
 Output --> Compare
 ```
 
+</details>
+
 For each output tile, P21 loads [packed INT4](#packed-int4) weights, decodes signed nibbles, and multiplies them by FP16 activations. A compile-time [decode placement](#decode-placement) choice places decoded weights in registers or a swizzled shared-memory tile. The reduction accumulates in FP32, masks an [odd K tail](#odd-k-tail), and stores FP16. Drive checks correctness before profiling or timing. The separate [exact accumulation](#exact-accumulation) option uses integer accumulation and direct FP16 rounding, with a different cost profile.
+
+<details>
+<summary>Expand flow diagram 2</summary>
 
 ```mermaid
 flowchart TD
@@ -47,6 +83,8 @@ Build --> Check["Verifier compares output"]
 Check -->|"pass"| Report["Record result or timing"]
 Check -->|"fail"| Stop["Keep failure; skip benchmark"]
 ```
+
+</details>
 
 | Subsystem | Responsibility and owned invariant | Source |
 | --- | --- | --- |
@@ -120,24 +158,12 @@ These rationales are inferred from the implementation; behavior and measured lim
 
 This repository preserves the upstream TileLang compiler source, examples, history, and MIT license at `v0.1.15` (`a35f8ddf45eba16c21211ec8822d56ce5363036f`). The original upstream landing page is preserved verbatim as [README.upstream.md](README.upstream.md). The P21 addition is a focused Python TileLang schedule example and its real-GPU verification driver; it does not modify TileLang's native compiler or runtime.
 
-## Implemented path
-
-[`examples/dequantize_gemm/p21_fp16xint4.py`](examples/dequantize_gemm/p21_fp16xint4.py) packs two signed INT4 values per byte, even K index in the low nibble, and compiles `A[M,K] @ B[N,K].T` for FP16 activations and signed values in `[-8, 7]`. The kernel decodes each packed tile, masks odd K tails, accumulates in FP32, and stores FP16. Its compile-time policy chooses either a register fragment or a swizzled shared-memory tile for decoded weights, alongside M/N/K tiles and pipeline stages.
-
-P21 reuses TileLang's TIR frontend, pipeline, memory allocation/copy, layout inference, GEMM lowering, and native CUDA compiler. The authored extension is the schedule and decode-placement policy in the Python example; it is a bounded placement heuristic, not a reproduction of Ladder's search or compiler transformations. The current public API explicitly supports the active SM120 CUDA device and does not claim multi-GPU dispatch.
-
-```powershell
-$python = (Resolve-Path .venv\Scripts\python.exe).Path
-& $python examples\dequantize_gemm\p21_quickstart.py
-```
-
-Run the example by script path from the repository root. It imports the installed TileLang wheel and the P21 module beside the script; importing `tilelang` from a Python `-c` command at the checkout root instead resolves the unbuilt development tree.
-
-For the exact input contract, resource heuristic, validation, and benchmark limitations, see the [P21 guide](examples/dequantize_gemm/P21.md).
-
 ## Implementation techniques
 
 This section covers the active P21 Python example, its quickstart and verification paths, and the TileLang compiler mechanisms those paths directly invoke. Upstream examples unrelated to P21 are outside this scope. Rationale is inferred from current code; the entry-point contract and limitations are stated in the [P21 guide](examples/dequantize_gemm/P21.md).
+
+<details>
+<summary>Full technique index</summary>
 
 | Active subsystem | Technique cards | Source |
 | --- | --- | --- |
@@ -148,7 +174,19 @@ This section covers the active P21 Python example, its quickstart and verificati
 | Verification and measurement | [independent numerical oracles and ULP gate](#technique-independent-oracle-and-ulp-gate), [exhaustive finite-value check](#technique-exhaustive-finite-fp16-check), [separated host and device metrics](#technique-measurement-scope-separation) | [driver](tools/p21_verify.py#L29), [exact verifier](tools/p21_exact.py#L19) |
 | Quickstart and device boundary | [active-device validation and installed-wheel loading](#technique-device-and-compiler-boundary) | [quickstart](examples/dequantize_gemm/p21_quickstart.py#L1), [schedule](examples/dequantize_gemm/p21_fp16xint4.py#L197) |
 
-### Signed INT4 data representation
+</details>
+
+<a id="subsystem-signed-int4-representation-and-tiled-decode"></a>
+
+### 1. Signed INT4 representation and tiled decode
+
+[Back to the subsystem map](#architecture-and-execution-guide).
+
+**Code.** [`examples/dequantize_gemm/p21_fp16xint4.py`](examples/dequantize_gemm/p21_fp16xint4.py), [`tools/p21_verify.py`](tools/p21_verify.py).
+
+**Techniques.** [Low-nibble-first packing](#technique-signed-int4-packing), [Signed-nibble extension](#technique-signed-nibble-extension), [Odd-K tail masking](#technique-odd-k-tail-masking).
+
+#### Signed INT4 data representation
 
 <a id="technique-signed-int4-packing"></a>
 
@@ -164,6 +202,10 @@ This section covers the active P21 Python example, its quickstart and verificati
 **Tradeoffs.** Callers pay packing work and the kernel must decode nibbles. The returned representation is byte-oriented and assumes contiguous packing order.
 
 **Code and ownership.** [pack_signed_int4](examples/dequantize_gemm/p21_fp16xint4.py#L33), P21 extension.
+
+
+
+**Used in.** [Signed INT4 representation and tiled decode](#subsystem-signed-int4-representation-and-tiled-decode). [Back to the subsystem map](#architecture-and-execution-guide).
 
 </details>
 
@@ -182,6 +224,10 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** `_compile.main` [decode loop](examples/dequantize_gemm/p21_fp16xint4.py#L145), P21 extension using TileLang TIR operations.
 
+
+
+**Used in.** [Signed INT4 representation and tiled decode](#subsystem-signed-int4-representation-and-tiled-decode). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
 
 <a id="technique-odd-k-tail-masking"></a>
@@ -199,9 +245,25 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** `_compile.main` [K guard](examples/dequantize_gemm/p21_fp16xint4.py#L147), `_verify_signed_cancellation_and_poisoned_tail` [poison fixture](tools/p21_verify.py#L186), P21 extension.
 
+
+
+**Used in.** [Signed INT4 representation and tiled decode](#subsystem-signed-int4-representation-and-tiled-decode). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
 
-### Tiled FP32 tensor-core schedule
+<a id="subsystem-fp32-tiled-schedule-and-resource-policy"></a>
+
+### 2. FP32 tiled schedule and resource policy
+
+[Back to the subsystem map](#architecture-and-execution-guide).
+
+**Code.** [`examples/dequantize_gemm/p21_fp16xint4.py`](examples/dequantize_gemm/p21_fp16xint4.py).
+
+**Techniques.** [Shared-memory tiling and pipelined GEMM](#technique-shared-memory-tiling-and-pipelining), [Compile-time decode placement](#technique-decode-placement-policy), [Logical resource-bound estimation](#technique-resource-bound-estimation).
+
+**Related concepts.** [decode placement](#decode-placement), [two-ULP gate](#two-ulp-gate).
+
+#### Tiled FP32 tensor-core schedule
 
 <a id="technique-shared-memory-tiling-and-pipelining"></a>
 
@@ -217,6 +279,10 @@ This section covers the active P21 Python example, its quickstart and verificati
 **Tradeoffs.** Tile and stage choices affect shared storage and occupancy; FP32 accumulation can still exceed the two-ULP gate on cancellation-heavy larger cases. Pipelining is a request to the compiler, not a measured overlap guarantee.
 
 **Code and ownership.** `_compile.main` [tile and reduction](examples/dequantize_gemm/p21_fp16xint4.py#L115), P21 schedule; `T.Pipelined` and `T.gemm` are inherited TileLang mechanisms.
+
+
+
+**Used in.** [FP32 tiled schedule and resource policy](#subsystem-fp32-tiled-schedule-and-resource-policy). [Back to the subsystem map](#architecture-and-execution-guide).
 
 </details>
 
@@ -235,6 +301,10 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** `_schedule` and `_compile.main` [placement branch](examples/dequantize_gemm/p21_fp16xint4.py#L47), P21 extension.
 
+
+
+**Used in.** [FP32 tiled schedule and resource policy](#subsystem-fp32-tiled-schedule-and-resource-policy). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
 
 <a id="technique-resource-bound-estimation"></a>
@@ -252,7 +322,21 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** `_schedule` [resource heuristic](examples/dequantize_gemm/p21_fp16xint4.py#L47), P21 extension.
 
+
+
+**Used in.** [FP32 tiled schedule and resource policy](#subsystem-fp32-tiled-schedule-and-resource-policy). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
+
+<a id="subsystem-inherited-tilelang-compile-pipeline"></a>
+
+### 3. Inherited TileLang compile pipeline
+
+[Back to the subsystem map](#architecture-and-execution-guide).
+
+**Code.** [`examples/dequantize_gemm/p21_fp16xint4.py`](examples/dequantize_gemm/p21_fp16xint4.py), [`tools/p21_verify.py`](tools/p21_verify.py), [`examples/dequantize_gemm/P21.md`](examples/dequantize_gemm/P21.md).
+
+**Techniques.** [TileLang TIR compilation pipeline](#technique-tilelang-compilation-pipeline).
 
 <a id="technique-tilelang-compilation-pipeline"></a>
 
@@ -269,9 +353,23 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** [JIT schedule](examples/dequantize_gemm/p21_fp16xint4.py#L106), [code evidence checks](tools/p21_verify.py#L139); compiler passes are inherited TileLang.
 
+
+
+**Used in.** [Inherited TileLang compile pipeline](#subsystem-inherited-tilelang-compile-pipeline). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
 
-### Opt-in exact arithmetic
+<a id="subsystem-exact-scalar-accumulation-path"></a>
+
+### 4. Exact scalar accumulation path
+
+[Back to the subsystem map](#architecture-and-execution-guide).
+
+**Code.** [`examples/dequantize_gemm/p21_fp16xint4.py`](examples/dequantize_gemm/p21_fp16xint4.py), [`tools/p21_exact.py`](tools/p21_exact.py).
+
+**Techniques.** [Scaled int64 accumulation with direct FP16 rounding](#technique-exact-scaled-integer-accumulation), [Exact accumulator overflow bound](#technique-exact-accumulator-overflow-bound).
+
+#### Opt-in exact arithmetic
 
 <a id="technique-exact-scaled-integer-accumulation"></a>
 
@@ -287,6 +385,10 @@ This section covers the active P21 Python example, its quickstart and verificati
 **Tradeoffs.** This scalar path performs work per output and K element and does not use tensor cores. NaN payload identity and negative-zero payload identity are not promised.
 
 **Code and ownership.** `_compile_exact.main` [integer and special accumulation](examples/dequantize_gemm/p21_fp16xint4.py#L164), P21 extension.
+
+
+
+**Used in.** [Exact scalar accumulation path](#subsystem-exact-scalar-accumulation-path). [Back to the subsystem map](#architecture-and-execution-guide).
 
 </details>
 
@@ -305,9 +407,25 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** `_EXACT_K_LIMIT` and `_schedule` [guard](examples/dequantize_gemm/p21_fp16xint4.py#L26), rejection check in [exact verifier](tools/p21_exact.py#L77), P21 extension.
 
+
+
+**Used in.** [Exact scalar accumulation path](#subsystem-exact-scalar-accumulation-path). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
 
-### Verification and measurement
+<a id="subsystem-correctness-and-numerical-diagnostics"></a>
+
+### 5. Correctness and numerical diagnostics
+
+[Back to the subsystem map](#architecture-and-execution-guide).
+
+**Code.** [`tools/p21_verify.py`](tools/p21_verify.py), [`tools/p21_exact.py`](tools/p21_exact.py).
+
+**Techniques.** [Independent oracles and FP16 ULP gate](#technique-independent-oracle-and-ulp-gate), [Exhaustive finite-FP16 check](#technique-exhaustive-finite-fp16-check).
+
+**Related concepts.** [SM120](#sm120).
+
+#### Verification and measurement
 
 <a id="technique-independent-oracle-and-ulp-gate"></a>
 
@@ -323,6 +441,10 @@ This section covers the active P21 Python example, its quickstart and verificati
 **Tradeoffs.** CPU float64 reference construction costs host memory and compute. Expanded diagnostic shapes intentionally omit the ULP rejection and are not evidence that the default quality gate passes.
 
 **Code and ownership.** `_check_output` and `_fp16_ulp_distances` [comparisons](tools/p21_verify.py#L59), P21 verification extension; Torch/NumPy arithmetic is dependency-provided.
+
+
+
+**Used in.** [Correctness and numerical diagnostics](#subsystem-correctness-and-numerical-diagnostics). [Back to the subsystem map](#architecture-and-execution-guide).
 
 </details>
 
@@ -341,7 +463,23 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** `drive` [small oracles](tools/p21_exact.py#L30), P21 verification extension; NumPy supplies the independent host arithmetic.
 
+
+
+**Used in.** [Correctness and numerical diagnostics](#subsystem-correctness-and-numerical-diagnostics). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
+
+<a id="subsystem-measurement-and-environment-boundary"></a>
+
+### 6. Measurement and environment boundary
+
+[Back to the subsystem map](#architecture-and-execution-guide).
+
+**Code.** [`tools/p21_verify.py`](tools/p21_verify.py), [`tools/p21_exact.py`](tools/p21_exact.py), [`examples/dequantize_gemm/p21_quickstart.py`](examples/dequantize_gemm/p21_quickstart.py), [`examples/dequantize_gemm/p21_fp16xint4.py`](examples/dequantize_gemm/p21_fp16xint4.py).
+
+**Techniques.** [Separate host and device measurement scopes](#technique-measurement-scope-separation), [Active-device and installed-compiler boundary](#technique-device-and-compiler-boundary).
+
+**Related concepts.** [SM120](#sm120).
 
 <a id="technique-measurement-scope-separation"></a>
 
@@ -358,9 +496,13 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** `benchmark` and `profile` [fast driver](tools/p21_verify.py#L305), `drive` [exact measurements](tools/p21_exact.py#L30), P21 extension using Torch profiler/Timer.
 
+
+
+**Used in.** [Measurement and environment boundary](#subsystem-measurement-and-environment-boundary). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
 
-### Quickstart and device boundary
+#### Quickstart and device boundary
 
 <a id="technique-device-and-compiler-boundary"></a>
 
@@ -377,7 +519,26 @@ This section covers the active P21 Python example, its quickstart and verificati
 
 **Code and ownership.** `compile_fp16xint4` [device check](examples/dequantize_gemm/p21_fp16xint4.py#L197), [quickstart import and version guard](examples/dequantize_gemm/p21_quickstart.py#L1), `doctor` [environment check](tools/p21_verify.py#L29), P21 extension.
 
+
+
+**Used in.** [Measurement and environment boundary](#subsystem-measurement-and-environment-boundary). [Back to the subsystem map](#architecture-and-execution-guide).
+
 </details>
+
+## Implemented path
+
+[`examples/dequantize_gemm/p21_fp16xint4.py`](examples/dequantize_gemm/p21_fp16xint4.py) packs two signed INT4 values per byte, even K index in the low nibble, and compiles `A[M,K] @ B[N,K].T` for FP16 activations and signed values in `[-8, 7]`. The kernel decodes each packed tile, masks odd K tails, accumulates in FP32, and stores FP16. Its compile-time policy chooses either a register fragment or a swizzled shared-memory tile for decoded weights, alongside M/N/K tiles and pipeline stages.
+
+P21 reuses TileLang's TIR frontend, pipeline, memory allocation/copy, layout inference, GEMM lowering, and native CUDA compiler. The authored extension is the schedule and decode-placement policy in the Python example; it is a bounded placement heuristic, not a reproduction of Ladder's search or compiler transformations. The current public API explicitly supports the active SM120 CUDA device and does not claim multi-GPU dispatch.
+
+```powershell
+$python = (Resolve-Path .venv\Scripts\python.exe).Path
+& $python examples\dequantize_gemm\p21_quickstart.py
+```
+
+Run the example by script path from the repository root. It imports the installed TileLang wheel and the P21 module beside the script; importing `tilelang` from a Python `-c` command at the checkout root instead resolves the unbuilt development tree.
+
+For the exact input contract, resource heuristic, validation, and benchmark limitations, see the [P21 guide](examples/dequantize_gemm/P21.md).
 
 ## Reproduce on Windows CUDA
 
